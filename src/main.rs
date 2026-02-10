@@ -10,6 +10,7 @@ mod status;
 mod storage;
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use clap::{Parser, Subcommand};
 use tracing::{error, info, warn};
@@ -68,6 +69,14 @@ struct SyncStats {
     errors: usize,
 }
 
+#[derive(Debug)]
+enum SyncOutcome {
+    Synced(storage::SavedCrate),
+    Cached(Option<storage::SavedCrate>),
+    Skipped,
+    Error,
+}
+
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt()
@@ -119,92 +128,59 @@ async fn run_sync(config_path: &PathBuf, force: bool) -> Result<()> {
         storage::prune(&rust_output_dir, &config, &rust_versions)?;
     }
 
-    let fetcher = GitHubFetcher::new();
+    let fetcher = Arc::new(GitHubFetcher::new());
     let mut saved_crates = Vec::new();
     let mut stats = SyncStats::default();
 
+    let mut jobs = Vec::new();
     for (crate_name, crate_doc) in &config.crates {
-        let Some(version) = rust_versions.get(crate_name.as_str()).cloned() else {
-            warn!("Crate '{crate_name}' not found in Cargo.lock, skipping");
-            stats.skipped += 1;
-            continue;
-        };
+        jobs.push((crate_name.clone(), crate_doc.clone()));
+    }
 
-        let Some(repo) = crate_doc.github_repo() else {
-            warn!("Crate '{crate_name}' has no GitHub repo in config, skipping");
-            stats.skipped += 1;
-            continue;
-        };
+    let max_file_size_kb = config.settings.max_file_size_kb;
+    let mut join_set = tokio::task::JoinSet::new();
 
-        if !force && storage::is_cached(&rust_output_dir, crate_name, &version, crate_doc) {
-            info!("  ⏭ {crate_name}@{version}: cached, skipping");
-            if let Some(saved) =
-                storage::read_cached_info(&rust_output_dir, crate_name, &version, crate_doc)
-            {
-                saved_crates.push(saved);
-            }
-            stats.cached += 1;
-            continue;
-        }
+    for (crate_name, crate_doc) in jobs {
+        let rust_output_dir = rust_output_dir.clone();
+        let rust_versions = rust_versions.clone();
+        let fetcher = Arc::clone(&fetcher);
 
-        info!("Syncing {crate_name}@{version}...");
-
-        let resolved = match fetcher
-            .resolve_ref(repo, crate_name, version.as_str())
+        join_set.spawn(async move {
+            sync_one_crate(
+                rust_output_dir,
+                rust_versions,
+                fetcher,
+                crate_name,
+                crate_doc,
+                force,
+                max_file_size_kb,
+            )
             .await
-        {
-            Ok(r) => r,
+        });
+    }
+
+    while let Some(joined) = join_set.join_next().await {
+        let result = match joined {
+            Ok(result) => result,
             Err(e) => {
-                warn!("  ✗ failed to resolve ref: {e}");
-                stats.errors += 1;
-                continue;
+                warn!("sync worker failed: {e}");
+                SyncOutcome::Error
             }
         };
-
-        if resolved.is_fallback {
-            warn!(
-                "  ⚠ no exact tag for {crate_name}@{version}, using {}",
-                resolved.git_ref
-            );
+        match result {
+            SyncOutcome::Synced(saved) => {
+                saved_crates.push(saved);
+                stats.synced += 1;
+            }
+            SyncOutcome::Cached(saved) => {
+                if let Some(saved) = saved {
+                    saved_crates.push(saved);
+                }
+                stats.cached += 1;
+            }
+            SyncOutcome::Skipped => stats.skipped += 1,
+            SyncOutcome::Error => stats.errors += 1,
         }
-
-        let requests = build_requests(crate_doc.subpath.as_deref(), crate_doc.effective_files());
-        let results = fetcher
-            .fetch_files(repo, &resolved.git_ref, &requests)
-            .await;
-
-        let fetched_files: Vec<_> = results
-            .into_iter()
-            .filter_map(|r| match r {
-                Ok(file) => Some(file),
-                Err(e) => match e {
-                    crate::error::AiDocsError::OptionalFileNotFound(_) => None,
-                    other => {
-                        warn!("  ✗ {other}");
-                        None
-                    }
-                },
-            })
-            .collect();
-
-        if fetched_files.is_empty() {
-            warn!("  ✗ no files fetched for {crate_name}@{version}");
-            stats.errors += 1;
-            continue;
-        }
-
-        let saved = storage::save_crate_files(
-            &rust_output_dir,
-            crate_name,
-            &version,
-            repo,
-            &resolved,
-            &fetched_files,
-            crate_doc,
-            config.settings.max_file_size_kb,
-        )?;
-        saved_crates.push(saved);
-        stats.synced += 1;
     }
 
     index::generate_index(&rust_output_dir, &saved_crates)?;
@@ -215,6 +191,93 @@ async fn run_sync(config_path: &PathBuf, force: bool) -> Result<()> {
     );
 
     Ok(())
+}
+
+async fn sync_one_crate(
+    rust_output_dir: PathBuf,
+    rust_versions: std::collections::HashMap<String, String>,
+    fetcher: Arc<GitHubFetcher>,
+    crate_name: String,
+    crate_doc: crate::config::CrateDoc,
+    force: bool,
+    max_file_size_kb: usize,
+) -> SyncOutcome {
+    let Some(version) = rust_versions.get(crate_name.as_str()).cloned() else {
+        warn!("Crate '{crate_name}' not found in Cargo.lock, skipping");
+        return SyncOutcome::Skipped;
+    };
+
+    let Some(repo) = crate_doc.github_repo().map(str::to_string) else {
+        warn!("Crate '{crate_name}' has no GitHub repo in config, skipping");
+        return SyncOutcome::Skipped;
+    };
+
+    if !force && storage::is_cached(&rust_output_dir, &crate_name, &version, &crate_doc) {
+        info!("  ⏭ {crate_name}@{version}: cached, skipping");
+        let cached = storage::read_cached_info(&rust_output_dir, &crate_name, &version, &crate_doc);
+        return SyncOutcome::Cached(cached);
+    }
+
+    info!("Syncing {crate_name}@{version}...");
+
+    let resolved = match fetcher
+        .resolve_ref(&repo, &crate_name, version.as_str())
+        .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            warn!("  ✗ failed to resolve ref for {crate_name}@{version}: {e}");
+            return SyncOutcome::Error;
+        }
+    };
+
+    if resolved.is_fallback {
+        warn!(
+            "  ⚠ no exact tag for {crate_name}@{version}, using {}",
+            resolved.git_ref
+        );
+    }
+
+    let requests = build_requests(crate_doc.subpath.as_deref(), crate_doc.effective_files());
+    let results = fetcher
+        .fetch_files(&repo, &resolved.git_ref, &requests)
+        .await;
+
+    let fetched_files: Vec<_> = results
+        .into_iter()
+        .filter_map(|r| match r {
+            Ok(file) => Some(file),
+            Err(e) => match e {
+                crate::error::AiDocsError::OptionalFileNotFound(_) => None,
+                other => {
+                    warn!("  ✗ {crate_name}@{version}: {other}");
+                    None
+                }
+            },
+        })
+        .collect();
+
+    if fetched_files.is_empty() {
+        warn!("  ✗ no files fetched for {crate_name}@{version}");
+        return SyncOutcome::Error;
+    }
+
+    match storage::save_crate_files(
+        &rust_output_dir,
+        &crate_name,
+        &version,
+        &repo,
+        &resolved,
+        &fetched_files,
+        &crate_doc,
+        max_file_size_kb,
+    ) {
+        Ok(saved) => SyncOutcome::Synced(saved),
+        Err(e) => {
+            warn!("  ✗ failed to save {crate_name}@{version}: {e}");
+            SyncOutcome::Error
+        }
+    }
 }
 
 fn build_requests(subpath: Option<&str>, explicit_files: Option<Vec<String>>) -> Vec<FileRequest> {

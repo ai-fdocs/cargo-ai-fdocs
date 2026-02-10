@@ -26,7 +26,7 @@ pub struct Settings {
     pub prune: bool,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct CrateDoc {
     /// New format: explicit repository in crate section.
     pub repo: Option<String>,

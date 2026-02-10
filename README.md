@@ -32,6 +32,7 @@ Implemented now:
 - generate global index (`_INDEX.md`);
 - show status of synced docs;
 - continue sync when one crate/file fails (best-effort), reporting errors in итоговой статистике.
+- run crate sync in parallel for faster lockfile processing.
 
 Current commands:
 
@@ -133,7 +134,7 @@ with your project’s real dependency graph.
 
 ## Roadmap (high level)
 
-Planned next step is parallel fetching and richer status/check UX.
+Planned next steps include richer status/check UX and further CI-oriented diagnostics.
 
 ## License
 
