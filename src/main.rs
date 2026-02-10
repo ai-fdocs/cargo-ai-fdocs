@@ -1,6 +1,8 @@
 mod config;
 mod error;
 mod fetcher;
+mod index;
+mod processor;
 mod resolver;
 mod status;
 
@@ -9,11 +11,8 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 use tracing::{error, info, warn};
 
-use crate::config::Config;
-use crate::error::Result;
-use crate::fetcher::GitHubFetcher;
-use crate::resolver::LockResolver;
-use crate::status::{exit_code, is_healthy, SyncStatus};
+use crate::config::{Config, Source};
+use crate::fetcher::github::GitHubFetcher;
 
 #[derive(Parser)]
 #[command(name = "cargo-ai-fdocs")]
@@ -32,11 +31,26 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     Sync {
-        #[arg(short, long)]
+        #[arg(short, long, default_value = "ai-docs.toml")]
+        config: PathBuf,
+        #[arg(long, default_value_t = false)]
         force: bool,
+    },
+    /// Show which docs are outdated vs lock files
+    Status {
+        #[arg(short, long, default_value = "ai-docs.toml")]
+        config: PathBuf,
     },
     Status,
     Check,
+}
+
+#[derive(Default)]
+struct SyncStats {
+    synced: usize,
+    cached: usize,
+    skipped: usize,
+    errors: usize,
 }
 
 #[tokio::main]
@@ -48,104 +62,126 @@ async fn main() {
         )
         .init();
 
-    if let Err(e) = run().await {
-        error!("Fatal error: {e}");
-        std::process::exit(1);
-    }
-}
+    let args: Vec<String> = std::env::args()
+        .enumerate()
+        .filter(|(i, arg)| !(*i == 1 && arg == "ai-docs"))
+        .map(|(_, arg)| arg)
+        .collect();
 
 async fn run() -> Result<()> {
     let CargoCli::AiFdocs(cli) = CargoCli::parse();
 
     match cli.command {
-        Commands::Sync { force } => {
-            info!("Starting sync... (force={force})");
-
-            let config_path = PathBuf::from("ai-fdocs.toml");
-            let config = match Config::load(&config_path) {
-                Ok(config) => config,
-                Err(crate::error::AiDocsError::ConfigNotFound(_)) => {
-                    print_config_example();
-                    return Ok(());
-                }
-                Err(err) => return Err(err),
-            };
-            info!(
-                "Config loaded. Processing {} crates...",
-                config.crates.len()
-            );
-            info!(
-                "Settings: output_dir='{}', max_file_size_kb={}, prune={}",
-                config.settings.output_dir.display(),
-                config.settings.max_file_size_kb,
-                config.settings.prune
-            );
-
-            let lock_path = PathBuf::from("Cargo.lock");
-            let locked_versions = LockResolver::resolve(&lock_path)?;
-            info!(
-                "Cargo.lock parsed. Found {} packages.",
-                locked_versions.len()
-            );
-
-            let fetcher = GitHubFetcher::new()?;
-            if fetcher.token_present {
-                info!("GitHub token detected.");
+        Commands::Sync { config, force } => {
+            if let Err(e) = run_sync(&config, force).await {
+                error!("Sync failed: {e}");
+                std::process::exit(1);
             }
+        }
+        Commands::Status { config } => {
+            if let Err(e) = run_status(&config).await {
+                error!("Status check failed: {e}");
+                std::process::exit(1);
+            }
+        }
+    }
+}
 
-            for (name, crate_cfg) in &config.crates {
-                info!("Processing crate: {name}");
-                if !crate_cfg.ai_notes.is_empty() {
-                    info!("  AI notes configured ({} chars)", crate_cfg.ai_notes.len());
-                }
+async fn run_sync(config_path: &PathBuf, force: bool) -> error::Result<()> {
+    let config = Config::load(config_path)?;
+    info!("Loaded config from {}", config_path.display());
 
-                let Some(version) = locked_versions.get(name) else {
-                    warn!("Crate '{name}' not found in Cargo.lock. Skipping.");
-                    continue;
-                };
-                info!("  Locked version: {version}");
+    let cargo_lock_path = PathBuf::from("Cargo.lock");
+    let rust_versions = if cargo_lock_path.exists() {
+        resolver::resolve_cargo_versions(&cargo_lock_path)?
+    } else {
+        warn!("Cargo.lock not found, skipping Rust dependencies");
+        std::collections::HashMap::new()
+    };
 
-                let Some(github_source) = crate_cfg
-                    .sources
-                    .iter()
-                    .find(|source| source.source_type == "github")
-                else {
-                    warn!("  ❌ no source with type='github' configured. Skipping.");
-                    continue;
-                };
+    let rust_output_dir = storage::rust_output_dir(&config.settings.output_dir);
+    if config.settings.prune {
+        storage::prune(&rust_output_dir, &config, &rust_versions)?;
+    }
 
-                let resolved = fetcher
-                    .resolve_ref(&github_source.repo, name, version)
-                    .await?;
-                if resolved.is_fallback {
-                    warn!("  ⚠ Fallback to branch: {}", resolved.git_ref);
-                } else {
-                    info!("  Tag found: {}", resolved.git_ref);
-                }
+    let fetcher = GitHubFetcher::new();
+    let mut saved_crates = Vec::new();
+    let mut stats = SyncStats::default();
 
-                if let Some(paths) = &crate_cfg.files {
-                    info!("  Explicit files configured: {}", paths.len());
-                    for path in paths {
-                        match fetcher
-                            .fetch_file(&github_source.repo, &resolved.git_ref, path)
-                            .await?
-                        {
-                            Some(content) => {
-                                info!("  ✅ '{}' fetched ({} bytes)", path, content.len())
-                            }
-                            None => warn!("  ❌ '{}' not found", path),
+    for (crate_name, crate_doc) in &config.crates {
+        let Some(version) = rust_versions.get(crate_name.as_str()).cloned() else {
+            warn!("Crate '{crate_name}' not found in Cargo.lock, skipping");
+            stats.skipped += 1;
+            continue;
+        };
+
+        if !force && storage::is_cached(&rust_output_dir, crate_name, &version) {
+            info!("  ⏭ {crate_name}@{version}: cached, skipping");
+            if let Some(saved) =
+                storage::read_cached_info(&rust_output_dir, crate_name, &version, crate_doc)
+            {
+                saved_crates.push(saved);
+            }
+            stats.cached += 1;
+            continue;
+        }
+
+        info!("Syncing {crate_name}@{version}...");
+
+        let mut crate_saved: Option<storage::SavedCrate> = None;
+
+        for source in &crate_doc.sources {
+            match source {
+                Source::GitHub { repo, files } => {
+                    let resolved = match fetcher.resolve_ref(repo, &version).await {
+                        Ok(r) => r,
+                        Err(e) => {
+                            warn!("  ✗ failed to resolve ref: {e}");
+                            stats.errors += 1;
+                            continue;
                         }
-                    }
-                } else {
-                    let readme_path = "README.md".to_string();
+                    };
 
-                    match fetcher
-                        .fetch_file(&github_source.repo, &resolved.git_ref, &readme_path)
-                        .await?
-                    {
-                        Some(content) => info!("  ✅ README.md fetched ({} bytes)", content.len()),
-                        None => warn!("  ❌ README.md not found at {readme_path}"),
+                    if resolved.is_fallback {
+                        warn!(
+                            "  ⚠ no exact tag for {crate_name}@{version}, using {}",
+                            resolved.git_ref
+                        );
                     }
+
+                    let results = fetcher.fetch_files(repo, &resolved.git_ref, files).await;
+                    let fetched_files: Vec<_> = results
+                        .into_iter()
+                        .filter_map(|r| match r {
+                            Ok(file) => Some(file),
+                            Err(e) => {
+                                warn!("  ✗ {e}");
+                                None
+                            }
+                        })
+                        .collect();
+
+                    if fetched_files.is_empty() {
+                        warn!("  ✗ no files fetched for {crate_name}@{version}");
+                        stats.errors += 1;
+                        continue;
+                    }
+
+                    let saved = storage::save_crate_files(
+                        &rust_output_dir,
+                        crate_name,
+                        &version,
+                        repo,
+                        &resolved,
+                        &fetched_files,
+                        crate_doc,
+                        config.settings.max_file_size_kb,
+                    )?;
+                    crate_saved = Some(saved);
+                    break;
+                }
+                Source::DocsRs => {
+                    info!("  ⏭ docs.rs source skipped (not implemented in MVP)");
                 }
             }
         }
@@ -160,24 +196,20 @@ async fn run() -> Result<()> {
                 Err(err) => return Err(err),
             };
 
-            let lock_path = PathBuf::from("Cargo.lock");
-            let locked_versions = LockResolver::resolve(&lock_path)?;
-
-            let statuses = status::collect_status(
-                &config,
-                &locked_versions,
-                config.settings.output_dir.as_path(),
-            );
-            status::print_status_table(&statuses);
+        if let Some(saved) = crate_saved {
+            saved_crates.push(saved);
+            stats.synced += 1;
+        } else {
+            stats.skipped += 1;
         }
     }
 
-    Ok(())
-}
+    index::generate_index(&rust_output_dir, &saved_crates)?;
 
-fn collect_statuses() -> Vec<SyncStatus> {
-    Vec::new()
-}
+    info!(
+        "✅ Sync complete: {} synced, {} cached, {} skipped, {} errors",
+        stats.synced, stats.cached, stats.skipped, stats.errors
+    );
 
 fn print_config_example() {
     eprintln!("ai-fdocs.toml not found. Create one in your project root.");
@@ -191,8 +223,38 @@ fn print_config_example() {
     eprintln!("ai_notes = \"Use derive macros for serialization.\"");
 }
 
-mod status {
-    use crate::error::Result;
+async fn run_status(config_path: &PathBuf) -> error::Result<()> {
+    let config = Config::load(config_path)?;
+
+    let cargo_lock_path = PathBuf::from("Cargo.lock");
+    let rust_versions = if cargo_lock_path.exists() {
+        resolver::resolve_cargo_versions(&cargo_lock_path)?
+    } else {
+        std::collections::HashMap::new()
+    };
+
+    let rust_dir = storage::rust_output_dir(&config.settings.output_dir);
+
+    println!("Dependency Status:");
+    println!("{:-<60}", "");
+
+    for (crate_name, _) in &config.crates {
+        let lock_version = rust_versions
+            .get(crate_name.as_str())
+            .cloned()
+            .unwrap_or_else(|| "???".to_string());
+
+        let crate_dir = rust_dir.join(format!("{crate_name}@{lock_version}"));
+
+        let status = if crate_dir.exists() {
+            "✅ OK".to_string()
+        } else {
+            let existing = find_existing_version(&rust_dir, crate_name);
+            match existing {
+                Some(old_ver) => format!("⚠️  OUTDATED ({old_ver} → {lock_version})"),
+                None => "❌ MISSING".to_string(),
+            }
+        };
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     pub enum State {
@@ -209,109 +271,15 @@ mod status {
         pub state: State,
     }
 
-    pub fn collect_status() -> Result<Vec<Entry>> {
-        Ok(Vec::new())
-    }
-
-    pub fn is_healthy(statuses: &[Entry]) -> bool {
-        statuses
-            .iter()
-            .all(|entry| matches!(entry.state, State::Synced | State::SyncedFallback))
-    }
-
-    pub fn print_status(statuses: &[Entry]) {
-        if statuses.is_empty() {
-            println!("No crates to inspect. Run `cargo ai-fdocs sync` first.");
-            return;
-        }
-
-        for entry in statuses {
-            println!("{}: {}", entry.crate_name, state_label(&entry.state));
+fn find_existing_version(ecosystem_dir: &std::path::Path, crate_name: &str) -> Option<String> {
+    let prefix = format!("{crate_name}@");
+    if let Ok(entries) = std::fs::read_dir(ecosystem_dir) {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.starts_with(&prefix) {
+                return Some(name.trim_start_matches(&prefix).to_string());
+            }
         }
     }
-
-    pub fn print_check(statuses: &[Entry]) {
-        let unhealthy: Vec<&Entry> = statuses
-            .iter()
-            .filter(|entry| {
-                matches!(
-                    entry.state,
-                    State::Missing | State::Outdated | State::Corrupted
-                )
-            })
-            .collect();
-
-        if unhealthy.is_empty() {
-            println!("ok ({} crates)", statuses.len());
-            return;
-        }
-
-        let names = unhealthy
-            .iter()
-            .map(|entry| entry.crate_name.as_str())
-            .collect::<Vec<_>>()
-            .join(", ");
-        println!("stale: {} crate(s): {}", unhealthy.len(), names);
-    }
-
-    fn state_label(state: &State) -> &'static str {
-        match state {
-            State::Synced => "synced",
-            State::SyncedFallback => "synced_fallback",
-            State::Missing => "missing",
-            State::Outdated => "outdated",
-            State::Corrupted => "corrupted",
-        }
-    }
-
-    #[cfg(test)]
-    mod tests {
-        use super::{is_healthy, Entry, State};
-
-        #[test]
-        fn healthy_when_only_synced_or_fallback() {
-            let statuses = vec![
-                Entry {
-                    crate_name: "axum".to_string(),
-                    state: State::Synced,
-                },
-                Entry {
-                    crate_name: "serde".to_string(),
-                    state: State::SyncedFallback,
-                },
-            ];
-
-            assert!(is_healthy(&statuses));
-        }
-
-        #[test]
-        fn unhealthy_when_missing_present() {
-            let statuses = vec![Entry {
-                crate_name: "axum".to_string(),
-                state: State::Missing,
-            }];
-
-            assert!(!is_healthy(&statuses));
-        }
-
-        #[test]
-        fn unhealthy_when_outdated_present() {
-            let statuses = vec![Entry {
-                crate_name: "axum".to_string(),
-                state: State::Outdated,
-            }];
-
-            assert!(!is_healthy(&statuses));
-        }
-
-        #[test]
-        fn unhealthy_when_corrupted_present() {
-            let statuses = vec![Entry {
-                crate_name: "axum".to_string(),
-                state: State::Corrupted,
-            }];
-
-            assert!(!is_healthy(&statuses));
-        }
-    }
+    None
 }

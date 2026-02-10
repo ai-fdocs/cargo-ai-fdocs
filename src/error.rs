@@ -15,8 +15,8 @@ pub enum AiDocsError {
     #[error("Config file not found at: {0}")]
     ConfigNotFound(PathBuf),
 
-    #[error("Network error: {0}")]
-    Network(#[from] reqwest::Error),
+    #[error("HTTP request failed for {url}: {source}")]
+    Fetch { url: String, source: reqwest::Error },
 
     #[error("Cargo.lock parsing error: {0}")]
     CargoLockParse(String),
@@ -27,3 +27,5 @@ pub enum AiDocsError {
     #[error("Unknown error: {0}")]
     Unknown(String),
 }
+
+pub type Result<T> = std::result::Result<T, AiDocsError>;

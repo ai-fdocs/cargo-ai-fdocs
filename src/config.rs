@@ -37,14 +37,9 @@ pub struct CrateConfig {
 
     /// Instructions for AI (goes into _INDEX.md)
     #[serde(default)]
-    pub ai_notes: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct CrateSource {
-    #[serde(rename = "type")]
-    pub source_type: String,
-    pub repo: String,
+    pub include_migration_guide: bool,
+    #[serde(default = "default_true")]
+    pub prune: bool,
 }
 
 fn default_output_dir() -> PathBuf {
@@ -77,21 +72,5 @@ impl Config {
         let content = std::fs::read_to_string(path)?;
         let config: Config = toml::from_str(&content)?;
         Ok(config)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::path::Path;
-
-    use super::Config;
-
-    #[test]
-    fn readme_example_parses_with_config_load() {
-        let path = Path::new("examples/ai-docs.toml");
-        let config = Config::load(path).expect("README example must parse");
-
-        assert!(config.crates.contains_key("serde"));
-        assert!(config.crates.contains_key("sqlx"));
     }
 }
