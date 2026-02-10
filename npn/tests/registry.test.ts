@@ -18,8 +18,18 @@ describe("extractGithubRepo", () => {
     expect(result?.repo).toBe("colinhacks/zod");
   });
 
+  it("parses git:// protocol", () => {
+    const result = extractGithubRepo("git://github.com/joyent/node.git");
+    expect(result?.repo).toBe("joyent/node");
+  });
+
   it("parses github: shorthand", () => {
     const result = extractGithubRepo("github:expressjs/express");
+    expect(result?.repo).toBe("expressjs/express");
+  });
+
+  it("parses owner/repo shorthand", () => {
+    const result = extractGithubRepo("expressjs/express");
     expect(result?.repo).toBe("expressjs/express");
   });
 
@@ -31,5 +41,14 @@ describe("extractGithubRepo", () => {
 
   it("returns null for non-GitHub URL", () => {
     expect(extractGithubRepo("https://gitlab.com/foo/bar")).toBeNull();
+  });
+
+  it("handles ssh format", () => {
+    const result = extractGithubRepo("git@github.com:user/repo.git");
+    expect(result?.repo).toBe("user/repo");
+  });
+
+  it("returns null for invalid input", () => {
+    expect(extractGithubRepo("not a url at all")).toBeNull();
   });
 });

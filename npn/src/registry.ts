@@ -1,6 +1,7 @@
 export interface PackageInfo {
   name: string;
   repository: string | null;
+  subpath?: string;
   description: string | null;
 }
 
@@ -45,18 +46,21 @@ export class NpmRegistryClient {
 
 function parsePackageInfo(data: NpmPackageResponse): PackageInfo {
   let repoUrl: string | null = null;
+  let subpath: string | undefined;
 
   if (data.repository) {
     if (typeof data.repository === "string") {
       repoUrl = data.repository;
     } else if (data.repository.url) {
       repoUrl = data.repository.url;
+      subpath = extractSubpathFromRepo(data.repository);
     }
   }
 
   return {
     name: data.name,
     repository: repoUrl,
+    subpath,
     description: data.description ?? null,
   };
 }
@@ -69,6 +73,17 @@ export function extractGithubRepo(url: string): { repo: string; subpath?: string
   }
 
   cleaned = cleaned.replace(/^git\+/, "");
+  cleaned = cleaned
+    .replace(/^git:\/\//, "https://")
+    .replace(/^ssh:\/\/git@github\.com\//, "https://github.com/")
+    .replace(/^git@github\.com:/, "https://github.com/");
+
+  // short format: owner/repo
+  if (!cleaned.includes("://") && cleaned.split("/").length === 2 && !cleaned.includes("@")) {
+    const [owner, repo] = cleaned.split("/");
+    if (owner && repo) return { repo: `${owner}/${repo}` };
+  }
+
   if (!cleaned.includes("github.com")) return null;
 
   cleaned = cleaned
@@ -80,16 +95,21 @@ export function extractGithubRepo(url: string): { repo: string; subpath?: string
 
   cleaned = cleaned.replace(/\.git$/, "").replace(/\/$/, "");
 
-  const parts = cleaned.split("/");
-  if (parts.length < 2) return null;
+  try {
+    const normalized = cleaned.includes("://") ? cleaned : `https://github.com/${cleaned}`;
+    const parsed = new URL(normalized);
+    const parts = parsed.pathname.split("/").filter(Boolean);
+    if (parts.length < 2) return null;
 
-  const repo = `${parts[0]}/${parts[1]}`;
-  let subpath: string | undefined;
-  if (parts.length > 4 && parts[2] === "tree") {
-    subpath = parts.slice(4).join("/");
+    const repo = `${parts[0]}/${parts[1]}`;
+    let subpath: string | undefined;
+    if (parts.length > 4 && parts[2] === "tree") {
+      subpath = parts.slice(4).join("/");
+    }
+    return { repo, subpath };
+  } catch {
+    return null;
   }
-
-  return { repo, subpath };
 }
 
 export function extractSubpathFromRepo(repoField: unknown): string | undefined {

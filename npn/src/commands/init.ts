@@ -1,7 +1,6 @@
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import chalk from "chalk";
-import { resolveVersions } from "../resolver.js";
 import { NpmRegistryClient, extractGithubRepo } from "../registry.js";
 import { AiDocsError } from "../error.js";
 
@@ -25,16 +24,31 @@ function shouldSkip(name: string): boolean {
 
 export async function cmdInit(projectRoot: string, overwrite: boolean): Promise<void> {
   const configPath = join(projectRoot, "ai-fdocs.toml");
+  const packageJsonPath = join(projectRoot, "package.json");
+
   if (existsSync(configPath) && !overwrite) {
     throw new AiDocsError("ai-fdocs.toml already exists. Use --overwrite to replace.", "UNKNOWN");
   }
 
-  console.log(chalk.blue("Scanning lockfile..."));
-  const lockVersions = resolveVersions(projectRoot);
-  console.log(chalk.green(`Found ${lockVersions.size} packages in lockfile.`));
+  if (!existsSync(packageJsonPath)) {
+    throw new AiDocsError("package.json not found. Cannot init.", "FILE_NOT_FOUND");
+  }
 
-  const candidates = [...lockVersions.keys()].filter((name) => !shouldSkip(name)).sort();
-  console.log(chalk.gray(`${candidates.length} candidates after filtering.`));
+  console.log(chalk.blue("Reading package.json..."));
+  const pkgJson = JSON.parse(readFileSync(packageJsonPath, "utf-8")) as {
+    dependencies?: Record<string, string>;
+    devDependencies?: Record<string, string>;
+  };
+
+  const deps = {
+    ...(pkgJson.dependencies ?? {}),
+    ...(pkgJson.devDependencies ?? {}),
+  };
+
+  const candidates = Object.keys(deps)
+    .filter((name) => !shouldSkip(name))
+    .sort();
+  console.log(chalk.green(`Found ${candidates.length} candidate packages.`));
 
   const registry = new NpmRegistryClient();
   const resolved = new Map<string, { repo: string; subpath?: string; description?: string }>();
@@ -60,7 +74,7 @@ export async function cmdInit(projectRoot: string, overwrite: boolean): Promise<
       continue;
     }
 
-    const subpath = extracted.subpath ?? (await getRepositoryDirectory(name));
+    const subpath = info.subpath ?? extracted.subpath;
     resolved.set(name, { repo: extracted.repo, subpath, description: info.description ?? undefined });
 
     if (i % 10 === 0) await sleep(50);
@@ -86,23 +100,6 @@ export async function cmdInit(projectRoot: string, overwrite: boolean): Promise<
 
   writeFileSync(configPath, toml, "utf-8");
   console.log(chalk.green(`\n✅ Generated ai-fdocs.toml with ${resolved.size} packages.`));
-}
-
-async function getRepositoryDirectory(name: string): Promise<string | undefined> {
-  try {
-    const encodedName = name.replace("/", "%2F");
-    const resp = await fetch(`https://registry.npmjs.org/${encodedName}/latest`);
-    if (!resp.ok) return undefined;
-
-    const data = (await resp.json()) as { repository?: { directory?: string } | string };
-    if (data.repository && typeof data.repository === "object" && typeof data.repository.directory === "string") {
-      return data.repository.directory;
-    }
-
-    return undefined;
-  } catch {
-    return undefined;
-  }
 }
 
 function needsQuoting(key: string): boolean {

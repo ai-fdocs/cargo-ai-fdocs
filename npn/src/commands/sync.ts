@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import chalk from "chalk";
+import pLimit from "p-limit";
 import { loadConfig } from "../config.js";
 import { resolveVersions } from "../resolver.js";
 import { GitHubClient, type FetchedFile } from "../fetcher.js";
@@ -30,8 +31,10 @@ export async function cmdSync(projectRoot: string, force: boolean): Promise<void
 
   const github = new GitHubClient();
   const entries = Object.entries(config.packages);
+  const limit = pLimit(MAX_CONCURRENT);
 
-  const results = await parallelMap(entries, MAX_CONCURRENT, async ([name, pkgConfig]): Promise<SyncTaskResult> => {
+  const tasks = entries.map(([name, pkgConfig]) =>
+    limit(async (): Promise<SyncTaskResult> => {
     const version = lockVersions.get(name);
     if (!version) return { saved: null, status: "skipped", message: `'${name}': not in lockfile` };
 
@@ -90,7 +93,10 @@ export async function cmdSync(projectRoot: string, force: boolean): Promise<void
       saved: { name, version, gitRef: resolved.gitRef, isFallback: resolved.isFallback, files: savedNames, aiNotes: pkgConfig.ai_notes ?? "" },
       status: "synced",
     };
-  });
+    })
+  );
+
+  const results = await Promise.all(tasks);
 
   const savedPackages: SavedPackage[] = [];
   let synced = 0;
@@ -116,19 +122,4 @@ export async function cmdSync(projectRoot: string, force: boolean): Promise<void
   generateIndex(outputDir, savedPackages);
 
   console.log(chalk.green(`\n✅ Sync complete: ${synced} synced, ${cached} cached, ${skipped} skipped, ${errors} errors.`));
-}
-
-async function parallelMap<T, R>(items: T[], concurrency: number, fn: (item: T) => Promise<R>): Promise<R[]> {
-  const results: R[] = new Array(items.length);
-  let nextIndex = 0;
-
-  async function worker(): Promise<void> {
-    while (nextIndex < items.length) {
-      const index = nextIndex++;
-      results[index] = await fn(items[index]);
-    }
-  }
-
-  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => worker()));
-  return results;
 }

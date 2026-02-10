@@ -2,7 +2,7 @@
 
 Node.js/TypeScript версия `ai-fdocs` с паритетом ключевых фич Rust v0.2:
 
-- `init` из lockfile + npm registry;
+- `init` из `package.json` (прямые зависимости) + npm registry;
 - `sync` с параллельной загрузкой (`MAX_CONCURRENT=8`);
 - `check` для CI (exit code 0/1);
 - `_SUMMARY.md` в каждой папке пакета;
