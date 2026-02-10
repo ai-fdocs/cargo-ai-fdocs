@@ -79,7 +79,9 @@ impl GitHubFetcher {
                     git_ref: tag,
                     is_fallback: false,
                 });
-            } else if res.status() == StatusCode::TOO_MANY_REQUESTS {
+            } else if res.status() == StatusCode::TOO_MANY_REQUESTS
+                || res.status() == StatusCode::FORBIDDEN
+            {
                 return Err(AiDocsError::Unknown(
                     "GitHub API Rate Limit Exceeded".to_string(),
                 ));
@@ -92,7 +94,15 @@ impl GitHubFetcher {
         );
 
         let url = format!("https://api.github.com/repos/{owner_repo}");
-        let repo_info: RepoInfo = self.client.get(&url).send().await?.json().await?;
+        let repo_resp = self.client.get(&url).send().await?;
+        if !repo_resp.status().is_success() {
+            return Err(AiDocsError::Unknown(format!(
+                "Failed to fetch repository metadata for {owner_repo}: {}",
+                repo_resp.status()
+            )));
+        }
+
+        let repo_info: RepoInfo = repo_resp.json().await?;
 
         Ok(ResolvedRef {
             git_ref: repo_info.default_branch,
@@ -116,8 +126,20 @@ impl GitHubFetcher {
             return Ok(None);
         }
 
+        if res.status() == StatusCode::TOO_MANY_REQUESTS || res.status() == StatusCode::FORBIDDEN {
+            return Err(AiDocsError::Unknown(
+                "GitHub API Rate Limit Exceeded".to_string(),
+            ));
+        }
+
         if !res.status().is_success() {
-            return Err(AiDocsError::Network(res.error_for_status().unwrap_err()));
+            return Err(AiDocsError::Unknown(format!(
+                "Failed to fetch '{}' from {} at '{}': {}",
+                path,
+                owner_repo,
+                git_ref,
+                res.status()
+            )));
         }
 
         let text = res.text().await?;

@@ -55,9 +55,18 @@ async fn run() -> Result<()> {
     let CargoCli::AiFdocs(cli) = CargoCli::parse();
 
     match cli.command {
-        Commands::Sync { .. } => {
+        Commands::Sync { force } => {
+            info!("Starting sync... (force={force})");
+
             let config_path = PathBuf::from("ai-fdocs.toml");
-            let config = Config::load(&config_path)?;
+            let config = match Config::load(&config_path) {
+                Ok(config) => config,
+                Err(crate::error::AiDocsError::ConfigNotFound(_)) => {
+                    print_config_example();
+                    return Ok(());
+                }
+                Err(err) => return Err(err),
+            };
             info!(
                 "Config loaded. Processing {} crates...",
                 config.crates.len()
@@ -112,4 +121,16 @@ async fn run() -> Result<()> {
     }
 
     Ok(())
+}
+
+fn print_config_example() {
+    eprintln!("ai-fdocs.toml not found. Create one in your project root.");
+    eprintln!();
+    eprintln!("Example:");
+    eprintln!("[crates.axum]");
+    eprintln!("repo = \"tokio-rs/axum\"");
+    eprintln!();
+    eprintln!("[crates.serde]");
+    eprintln!("repo = \"serde-rs/serde\"");
+    eprintln!("ai_notes = \"Use derive macros for serialization.\"");
 }
