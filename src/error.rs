@@ -12,6 +12,9 @@ pub enum AiDocsError {
     #[error("Config parsing error: {0}")]
     ConfigParse(#[from] toml::de::Error),
 
+    #[error("Invalid config: {0}")]
+    InvalidConfig(String),
+
     #[error("Config file not found at: {0}")]
     ConfigNotFound(PathBuf),
 
