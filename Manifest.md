@@ -55,11 +55,11 @@ max_file_size_kb = 200
 prune = true
 
 [crates.axum]
-sources = [{ type = "github", repo = "tokio-rs/axum" }]
+repo = "tokio-rs/axum"
 ai_notes = "Web framework layer"
 
 [crates.sqlx]
-sources = [{ type = "github", repo = "launchbadge/sqlx" }]
+repo = "launchbadge/sqlx"
 files = ["README.md", "CHANGELOG.md", "docs/migration-guide.md"]
 ai_notes = "Use sqlx::query! where possible"
 ```
@@ -68,9 +68,12 @@ ai_notes = "Use sqlx::query! where possible"
 - `settings.output_dir` — куда сохранять docs.
 - `settings.max_file_size_kb` — лимит размера файла с обрезкой.
 - `settings.prune` — удалять устаревшие папки версий.
-- `crates.<name>.sources` — источник документации (в alpha: GitHub).
+- `crates.<name>.repo` — источник документации в формате `owner/repo`.
+- `crates.<name>.subpath` — опциональный префикс для monorepo (для дефолтных файлов).
 - `crates.<name>.files` — явный список файлов (если не указан, используются дефолтные).
 - `crates.<name>.ai_notes` — заметки для AI в индексах.
+
+Legacy-формат `sources = [{ type = "github", repo = "..." }]` остаётся поддержанным для обратной совместимости.
 
 ---
 

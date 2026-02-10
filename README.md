@@ -39,6 +39,7 @@ Current commands:
 cargo ai-fdocs sync
 cargo ai-fdocs sync --force
 cargo ai-fdocs status
+cargo ai-fdocs check
 ```
 
 > Note: the package name is `cargo-ai-fdocs`, while the current alpha command
@@ -61,11 +62,11 @@ max_file_size_kb = 200
 prune = true
 
 [crates.axum]
-sources = [{ type = "github", repo = "tokio-rs/axum" }]
+repo = "tokio-rs/axum"
 ai_notes = "Prefer extractor-based handlers and Router-first composition."
 
 [crates.sqlx]
-sources = [{ type = "github", repo = "launchbadge/sqlx" }]
+repo = "launchbadge/sqlx"
 files = ["README.md", "CHANGELOG.md", "docs/migration-guide.md"]
 ai_notes = "Prefer compile-time checked queries with sqlx::query!"
 ```
@@ -110,9 +111,13 @@ docs/ai/vendor-docs/rust/
   - `prune` (default: `true`)
 
 - `[crates.<name>]`
-  - `sources` (required in current alpha format)
+  - `repo` (recommended, `owner/repo`)
+  - `subpath` (optional monorepo prefix for default files)
   - `files` (optional explicit file list)
   - `ai_notes` (optional hints included in index)
+
+Legacy `sources = [{ type = "github", repo = "..." }]` is still accepted for
+backward compatibility, but new configs should use `repo`.
 
 ## Practical AI integration
 
@@ -125,8 +130,7 @@ with your project’s real dependency graph.
 
 ## Roadmap (high level)
 
-Planned next steps include `init`, `check`, and parallel fetching, but these are
-not part of the currently released alpha behavior in this branch.
+Planned next steps include `init` and parallel fetching.
 
 ## License
 
