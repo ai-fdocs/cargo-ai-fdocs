@@ -11,7 +11,7 @@ pub struct Config {
     pub settings: Settings,
 
     #[serde(default)]
-    pub crates: HashMap<String, CrateConfig>,
+    pub crates: HashMap<String, CrateDoc>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -27,19 +27,58 @@ pub struct Settings {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct CrateConfig {
-    /// Source definitions (at least one is required).
-    pub sources: Vec<CrateSource>,
-
-    /// Optional: Explicit list of files to fetch.
-    /// Paths are relative to repo root.
+pub struct CrateDoc {
+    /// New format: explicit repository in crate section.
+    pub repo: Option<String>,
+    /// Optional subpath for monorepos (used for defaults only).
+    pub subpath: Option<String>,
+    /// Optional explicit file list.
     pub files: Option<Vec<String>>,
 
-    /// Instructions for AI (goes into _INDEX.md)
+    /// Legacy format compatibility.
+    pub sources: Option<Vec<Source>>,
+
     #[serde(default)]
-    pub include_migration_guide: bool,
-    #[serde(default = "default_true")]
-    pub prune: bool,
+    pub ai_notes: String,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum Source {
+    GitHub {
+        repo: String,
+        #[serde(default)]
+        files: Vec<String>,
+    },
+    DocsRs,
+}
+
+impl CrateDoc {
+    pub fn github_repo(&self) -> Option<&str> {
+        if let Some(repo) = self.repo.as_deref() {
+            return Some(repo);
+        }
+
+        self.sources.as_ref().and_then(|sources| {
+            sources.iter().find_map(|s| match s {
+                Source::GitHub { repo, .. } => Some(repo.as_str()),
+                Source::DocsRs => None,
+            })
+        })
+    }
+
+    pub fn effective_files(&self) -> Option<Vec<String>> {
+        if let Some(files) = &self.files {
+            return Some(files.clone());
+        }
+
+        self.sources.as_ref().and_then(|sources| {
+            sources.iter().find_map(|s| match s {
+                Source::GitHub { files, .. } if !files.is_empty() => Some(files.clone()),
+                _ => None,
+            })
+        })
+    }
 }
 
 fn default_output_dir() -> PathBuf {
@@ -69,6 +108,7 @@ impl Config {
         if !path.exists() {
             return Err(AiDocsError::ConfigNotFound(path.to_path_buf()));
         }
+
         let content = std::fs::read_to_string(path)?;
         let config: Config = toml::from_str(&content)?;
         Ok(config)

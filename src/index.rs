@@ -36,7 +36,7 @@ pub fn generate_index(output_dir: &Path, crates: &[SavedCrate]) -> Result<()> {
             let file_links: Vec<String> = saved
                 .files
                 .iter()
-                .map(|f| format!("[{f}]({}@{}/{f})", saved.name, saved.version))
+                .map(|f| format!("[{f}]({}@{}/{})", saved.name, saved.version, f))
                 .collect();
             content.push_str(&format!("**Files:** {}\n\n", file_links.join(", ")));
         }

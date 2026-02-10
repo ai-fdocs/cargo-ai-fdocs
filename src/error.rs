@@ -15,6 +15,9 @@ pub enum AiDocsError {
     #[error("Config file not found at: {0}")]
     ConfigNotFound(PathBuf),
 
+    #[error("HTTP client error: {0}")]
+    Http(#[from] reqwest::Error),
+
     #[error("HTTP request failed for {url}: {source}")]
     Fetch { url: String, source: reqwest::Error },
 
@@ -24,8 +27,16 @@ pub enum AiDocsError {
     #[error("Cargo.lock not found. Please run 'cargo build' first.")]
     CargoLockNotFound,
 
-    #[error("Unknown error: {0}")]
-    Unknown(String),
-}
+    #[error("GitHub file not found: {repo} / {path} (refs tried: {tried_tags:?})")]
+    GitHubFileNotFound {
+        repo: String,
+        path: String,
+        tried_tags: Vec<String>,
+    },
 
-pub type Result<T> = std::result::Result<T, AiDocsError>;
+    #[error("Optional file not found: {0}")]
+    OptionalFileNotFound(String),
+
+    #[error("{0}")]
+    Other(String),
+}

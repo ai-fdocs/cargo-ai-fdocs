@@ -264,6 +264,9 @@ fn split_name_version(dir_name: &str) -> Option<(&str, &str)> {
 }
 
 pub fn rust_output_dir(base_output_dir: &Path) -> PathBuf {
+    if base_output_dir.file_name().and_then(|n| n.to_str()) == Some("rust") {
+        return base_output_dir.to_path_buf();
+    }
     base_output_dir.join("rust")
 }
 
