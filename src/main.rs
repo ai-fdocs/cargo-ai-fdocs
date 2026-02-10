@@ -298,9 +298,16 @@ async fn sync_one_crate(
         .fetch_files(&repo, &resolved.git_ref, &requests)
         .await;
 
-    let fetched_files = collect_fetched_files(results, &crate_name, &version);
+    let fetched = collect_fetched_files(results, &crate_name, &version);
+    if fetched.non_optional_errors > 0 && !fetched.files.is_empty() {
+        warn!(
+            "  ⚠ partial fetch for {crate_name}@{version}: {} file error(s), continuing with {} fetched file(s)",
+            fetched.non_optional_errors,
+            fetched.files.len()
+        );
+    }
 
-    if fetched_files.is_empty() {
+    if fetched.files.is_empty() {
         warn!("  ✗ no files fetched for {crate_name}@{version}");
         return SyncOutcome::Error(SyncErrorKind::NotFound);
     }
@@ -316,7 +323,7 @@ async fn sync_one_crate(
         &crate_name,
         &version,
         &save_ctx,
-        &fetched_files,
+        &fetched.files,
         &crate_doc,
     ) {
         Ok(saved) => SyncOutcome::Synced(saved),
@@ -327,24 +334,36 @@ async fn sync_one_crate(
     }
 }
 
+struct FetchCollection {
+    files: Vec<FetchedFile>,
+    non_optional_errors: usize,
+}
+
 fn collect_fetched_files(
     results: Vec<Result<FetchedFile>>,
     crate_name: &str,
     version: &str,
-) -> Vec<FetchedFile> {
-    results
-        .into_iter()
-        .filter_map(|r| match r {
-            Ok(file) => Some(file),
+) -> FetchCollection {
+    let mut files = Vec::new();
+    let mut non_optional_errors = 0;
+
+    for r in results {
+        match r {
+            Ok(file) => files.push(file),
             Err(e) => match e {
-                AiDocsError::OptionalFileNotFound(_) => None,
+                AiDocsError::OptionalFileNotFound(_) => {}
                 other => {
+                    non_optional_errors += 1;
                     warn!("  ✗ {crate_name}@{version}: {other}");
-                    None
                 }
             },
-        })
-        .collect()
+        }
+    }
+
+    FetchCollection {
+        files,
+        non_optional_errors,
+    }
 }
 
 fn build_requests(subpath: Option<&str>, explicit_files: Option<Vec<String>>) -> Vec<FileRequest> {
@@ -522,8 +541,23 @@ mod tests {
         ];
 
         let kept = collect_fetched_files(results, "demo", "1.0.0");
-        assert_eq!(kept.len(), 1);
-        assert_eq!(kept[0].path, "README.md");
+        assert_eq!(kept.files.len(), 1);
+        assert_eq!(kept.files[0].path, "README.md");
+        assert_eq!(kept.non_optional_errors, 1);
+    }
+
+    #[test]
+    fn collect_fetched_files_counts_only_non_optional_errors() {
+        let results = vec![
+            Err(AiDocsError::OptionalFileNotFound("README.md".to_string())),
+            Err(AiDocsError::OptionalFileNotFound(
+                "CHANGELOG.md".to_string(),
+            )),
+        ];
+
+        let kept = collect_fetched_files(results, "demo", "1.0.0");
+        assert!(kept.files.is_empty());
+        assert_eq!(kept.non_optional_errors, 0);
     }
 
     #[test]
