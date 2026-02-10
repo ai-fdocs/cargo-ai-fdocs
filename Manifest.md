@@ -128,6 +128,14 @@ docs/ai/vendor-docs/rust/
 ## 8. Roadmap до стабильной рабочей версии
 
 ### Ближайший этап (hardening alpha -> beta)
+Статус (текущее состояние):
+- ✅ retry/backoff и базовая классификация сетевых ошибок реализованы.
+- ✅ `check --format json` и CI-рецепты оформлены.
+- ✅ кроссплатформенный smoke CI (Linux/macOS/Windows) добавлен.
+- ✅ policy совместимости/semver зафиксирована в `COMPATIBILITY.md`.
+- ⏳ остаётся: интеграционные сценарии (lockfile/fallback/partial failures) и UX `_INDEX.md` для больших графов.
+- ⏳ остаётся: рефакторинг `save_crate_files` (`too_many_arguments`).
+
 - Надёжность сети: retry/backoff для GitHub API и raw-download, явная классификация ошибок (auth/rate-limit/not-found/network).
 - Тестовое покрытие: интеграционные сценарии для lockfile-resolve, fallback на branch, частичные ошибки (best-effort).
 - Наблюдаемость: более детальная итоговая статистика `sync` по типам ошибок и источникам.

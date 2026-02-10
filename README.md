@@ -252,34 +252,28 @@ with your project’s real dependency graph.
 ## Roadmap to stable release
 
 ### 1) Reliability hardening (near-term)
-- Improve retry/backoff behavior for GitHub API and raw-content downloads.
-- Add clearer error classification (auth/rate-limit/not-found/network) in `sync` summary.
-- Expand integration tests for lockfile parsing and fetch fallback scenarios.
+- [x] Improve retry/backoff behavior for GitHub API and raw-content downloads.
+- [x] Add clearer error classification (auth/rate-limit/not-found/network) in `sync` summary.
+- [ ] Expand integration tests for lockfile parsing and fetch fallback scenarios.
 
 ### 2) CI and team workflows
-- Stabilize `cargo ai-fdocs check` exit codes for predictable CI gating.
-- Add machine-readable check output mode (JSON) for CI/report tooling.
-- Provide ready-to-copy GitHub Actions recipes in docs.
+- [x] Stabilize `cargo ai-fdocs check` exit codes for predictable CI gating.
+- [x] Add machine-readable check output mode (JSON) for CI/report tooling.
+- [x] Provide ready-to-copy GitHub Actions recipes in docs.
 
 ### 3) Output and cache stability
-- `.aifd-meta.toml` now carries an explicit schema version (`schema_version = 1`) as a stable baseline.
-- Legacy cache metadata without schema version is auto-migrated on read; newer unknown schema versions are treated as incompatible.
-- Improve index ergonomics (`_INDEX.md`) for large dependency graphs.
+- [x] `.aifd-meta.toml` carries explicit schema versioning (`schema_version = 1`) as a stable baseline.
+- [x] Legacy cache metadata without schema version is auto-migrated on read; newer unknown schema versions are treated as incompatible.
+- [ ] Improve index ergonomics (`_INDEX.md`) for large dependency graphs.
 
 ### 4) Release readiness (v1.0)
-- Finalize CLI UX and help text consistency across all subcommands.
-- Complete cross-platform smoke checks (Linux/macOS/Windows).
-- Publish a compatibility/support policy and semantic-versioning guarantees.
-
-Progress update:
-- CLI help consistency checks are now covered by tests.
-- Cross-platform CI smoke is enabled in `.github/workflows/ci.yml`.
-- Compatibility policy is documented in [`COMPATIBILITY.md`](COMPATIBILITY.md).
+- [x] Finalize CLI UX and help text consistency across all subcommands.
+- [x] Complete cross-platform smoke checks (Linux/macOS/Windows).
+- [x] Publish a compatibility/support policy and semantic-versioning guarantees.
 
 ### 5) Tooling technical debt (next refactor candidate)
-- `cargo clippy` still reports a `too_many_arguments` warning for
-  `storage::save_crate_files`; this is non-blocking for release but a good
-  near-term refactor target.
+- [ ] `cargo clippy` may still report `too_many_arguments` for
+  `storage::save_crate_files`; non-blocking for release, but a near-term refactor target.
 
 ## License
 
