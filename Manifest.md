@@ -125,25 +125,46 @@ docs/ai/vendor-docs/rust/
 
 ---
 
-## 8. Roadmap (согласованная траектория)
+## 8. Roadmap до стабильной рабочей версии
 
-### v0.1-alpha (текущий фокус)
-- sync/status,
-- lock-mirroring,
-- fallback-логика,
-- `_INDEX.md` и crate metadata,
-- pruning и file-size limit.
+### Ближайший этап (hardening alpha -> beta)
+- Надёжность сети: retry/backoff для GitHub API и raw-download, явная классификация ошибок (auth/rate-limit/not-found/network).
+- Тестовое покрытие: интеграционные сценарии для lockfile-resolve, fallback на branch, частичные ошибки (best-effort).
+- Наблюдаемость: более детальная итоговая статистика `sync` по типам ошибок и источникам.
 
-### v0.2
-- `check` (CI-режим),
-- расширенные метаданные (детекция изменений конфига).
+### v0.2 (CI-first)
+- Довести `cargo ai-fdocs check` до стабильного CI-контракта (детерминированные exit codes).
+- Добавить machine-readable вывод (`--format json`) для интеграции с CI/reporting.
+- Подготовить готовые рецепты GitHub Actions (sync/check + cache).
 
-В CI режиме `check` выводит причины по каждому проблемному crate; в GitHub Actions дополнительно печатаются `::error` аннотации.
+В CI-режиме `check` должен показывать причины по каждому проблемному crate; в GitHub Actions — дополнительно печатать `::error` аннотации.
 
-### v1.0
-- стабилизация формата,
-- экосистемные sibling-проекты (Node/npm и далее),
-- docs.rs как дополнительный источник.
+Рецепт для GitHub Actions (минимальный):
+```yaml
+- uses: actions/checkout@v4
+- uses: dtolnay/rust-toolchain@stable
+- uses: Swatinem/rust-cache@v2
+- run: cargo ai-fdocs check --format json
+```
+
+JSON-контракт `status/check --format json`:
+- `summary.{total,synced,missing,outdated,corrupted}`
+- `statuses[].{crate_name,lock_version,docs_version,status,reason}`
+- `status in {Synced,SyncedFallback,Outdated,Missing,Corrupted}`
+
+### v0.3 (stability envelope)
+- Зафиксировать схему `.aifd-meta.toml` и добавить versioned cache/migration policy.
+- Улучшить UX `_INDEX.md` для больших dependency graph (навигация, секции, подсказки для AI).
+- Уточнить и унифицировать сообщения CLI по всем подкомандам (`sync/status/check/init`).
+
+### v1.0 (stable)
+- Финальная стабилизация CLI и формата выходных данных (semver promises).
+- Кроссплатформенные smoke/regression прогоны (Linux/macOS/Windows).
+- Публичная policy-документация: поддерживаемые версии Rust/OS и правила обратной совместимости.
+
+### После v1.0
+- Расширение экосистемы sibling-проектами (Node/npm и далее).
+- docs.rs как дополнительный источник с приоритетной стратегией merge/fallback.
 
 ---
 

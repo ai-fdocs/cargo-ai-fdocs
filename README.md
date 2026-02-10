@@ -40,7 +40,9 @@ Current commands:
 cargo ai-fdocs sync
 cargo ai-fdocs sync --force
 cargo ai-fdocs status
+cargo ai-fdocs status --format json
 cargo ai-fdocs check
+cargo ai-fdocs check --format json
 cargo ai-fdocs init
 ```
 
@@ -129,6 +131,46 @@ backward compatibility, but new configs should use `repo`.
 
 In CI (`cargo ai-fdocs check`), failures include per-crate reasons; in GitHub Actions they are additionally emitted as `::error` annotations.
 
+### CI recipe (GitHub Actions)
+
+```yaml
+name: ai-fdocs-check
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  check-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check ai-fdocs status (JSON)
+        run: cargo ai-fdocs check --format json
+```
+
+### JSON output contract (`status/check --format json`)
+
+Top-level object:
+- `summary`: counters for current run
+  - `total`, `synced`, `missing`, `outdated`, `corrupted`
+- `statuses`: per-crate entries
+  - `crate_name`, `lock_version`, `docs_version`, `status`, `reason`
+
+`status` enum values:
+- `Synced`
+- `SyncedFallback`
+- `Outdated`
+- `Missing`
+- `Corrupted`
+
 
 For Cursor-like tools, point instructions to:
 - `docs/ai/vendor-docs/rust/_INDEX.md` first,
@@ -137,9 +179,27 @@ For Cursor-like tools, point instructions to:
 This reduces stale API suggestions and makes generated code more consistent
 with your project’s real dependency graph.
 
-## Roadmap (high level)
+## Roadmap to stable release
 
-Planned next steps include richer status/check UX and further CI-oriented diagnostics.
+### 1) Reliability hardening (near-term)
+- Improve retry/backoff behavior for GitHub API and raw-content downloads.
+- Add clearer error classification (auth/rate-limit/not-found/network) in `sync` summary.
+- Expand integration tests for lockfile parsing and fetch fallback scenarios.
+
+### 2) CI and team workflows
+- Stabilize `cargo ai-fdocs check` exit codes for predictable CI gating.
+- Add machine-readable check output mode (JSON) for CI/report tooling.
+- Provide ready-to-copy GitHub Actions recipes in docs.
+
+### 3) Output and cache stability
+- Freeze metadata schema for `.aifd-meta.toml` before `1.0`.
+- Add explicit cache versioning/migrations to avoid breaking upgrades.
+- Improve index ergonomics (`_INDEX.md`) for large dependency graphs.
+
+### 4) Release readiness (v1.0)
+- Finalize CLI UX and help text consistency across all subcommands.
+- Complete cross-platform smoke checks (Linux/macOS/Windows).
+- Publish a compatibility/support policy and semantic-versioning guarantees.
 
 ## License
 

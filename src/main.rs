@@ -14,7 +14,7 @@ use std::sync::Arc;
 
 use tokio::sync::Semaphore;
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use tracing::{error, info, warn};
 
 use crate::config::Config;
@@ -50,10 +50,14 @@ enum Commands {
     Status {
         #[arg(short, long, default_value = "ai-fdocs.toml")]
         config: PathBuf,
+        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+        format: OutputFormat,
     },
     Check {
         #[arg(short, long, default_value = "ai-fdocs.toml")]
         config: PathBuf,
+        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+        format: OutputFormat,
     },
     Init {
         #[arg(short, long, default_value = "ai-fdocs.toml")]
@@ -61,6 +65,12 @@ enum Commands {
         #[arg(long, default_value_t = false)]
         force: bool,
     },
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
+enum OutputFormat {
+    Table,
+    Json,
 }
 
 #[derive(Default)]
@@ -112,8 +122,8 @@ async fn main() {
 async fn run(cli: Cli) -> Result<()> {
     match cli.command {
         Commands::Sync { config, force } => run_sync(&config, force).await,
-        Commands::Status { config } => run_status(&config),
-        Commands::Check { config } => run_check(&config),
+        Commands::Status { config, format } => run_status(&config, format),
+        Commands::Check { config, format } => run_check(&config, format),
         Commands::Init { config, force } => run_init_command(&config, force).await,
     }
 }
@@ -330,7 +340,11 @@ fn build_requests(subpath: Option<&str>, explicit_files: Option<Vec<String>>) ->
     ]
 }
 
-fn emit_check_failures_for_ci(statuses: &[crate::status::CrateStatus]) {
+fn should_emit_plain_check_errors(format: OutputFormat, github_actions: bool) -> bool {
+    !github_actions && matches!(format, OutputFormat::Table)
+}
+
+fn emit_check_failures_for_ci(format: OutputFormat, statuses: &[crate::status::CrateStatus]) {
     let github_actions = std::env::var("GITHUB_ACTIONS")
         .ok()
         .map(|v| v == "true")
@@ -347,7 +361,7 @@ fn emit_check_failures_for_ci(statuses: &[crate::status::CrateStatus]) {
                 status.status.as_str(),
                 status.reason
             );
-        } else {
+        } else if should_emit_plain_check_errors(format, github_actions) {
             eprintln!(
                 "[ai-fdocs check] {} [{}] {}",
                 status.crate_name,
@@ -358,18 +372,30 @@ fn emit_check_failures_for_ci(statuses: &[crate::status::CrateStatus]) {
     }
 }
 
-fn run_status(config_path: &Path) -> Result<()> {
+fn print_statuses(format: OutputFormat, statuses: &[crate::status::CrateStatus]) -> Result<()> {
+    match format {
+        OutputFormat::Table => print_status_table(statuses),
+        OutputFormat::Json => {
+            let json = status::format_status_json(statuses).map_err(|e| {
+                error::AiDocsError::Other(format!("failed to serialize status JSON: {e}"))
+            })?;
+            println!("{json}");
+        }
+    }
+
+    Ok(())
+}
+
+fn run_status(config_path: &Path, format: OutputFormat) -> Result<()> {
     let config = Config::load(config_path)?;
     let rust_versions = resolver::resolve_cargo_versions(PathBuf::from("Cargo.lock").as_path())?;
 
     let rust_dir = storage::rust_output_dir(&config.settings.output_dir);
     let statuses = collect_status(&config, &rust_versions, &rust_dir);
-    print_status_table(&statuses);
-
-    Ok(())
+    print_statuses(format, &statuses)
 }
 
-fn run_check(config_path: &Path) -> Result<()> {
+fn run_check(config_path: &Path, format: OutputFormat) -> Result<()> {
     let config = Config::load(config_path)?;
     let rust_versions = resolver::resolve_cargo_versions(PathBuf::from("Cargo.lock").as_path())?;
     let rust_dir = storage::rust_output_dir(&config.settings.output_dir);
@@ -380,14 +406,35 @@ fn run_check(config_path: &Path) -> Result<()> {
         .any(|s| !matches!(s.status, DocsStatus::Synced | DocsStatus::SyncedFallback));
 
     if failing {
-        print_status_table(&statuses);
-        emit_check_failures_for_ci(&statuses);
+        print_statuses(format, &statuses)?;
+        emit_check_failures_for_ci(format, &statuses);
         return Err(error::AiDocsError::Other(
             "Documentation is outdated, missing, or corrupted. Run: cargo ai-fdocs sync"
                 .to_string(),
         ));
     }
 
-    info!("All configured crate docs are up to date.");
+    match format {
+        OutputFormat::Table => info!("All configured crate docs are up to date."),
+        OutputFormat::Json => print_statuses(format, &statuses)?,
+    }
+
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{should_emit_plain_check_errors, OutputFormat};
+
+    #[test]
+    fn emits_plain_errors_only_for_table_outside_gha() {
+        assert!(should_emit_plain_check_errors(OutputFormat::Table, false));
+        assert!(!should_emit_plain_check_errors(OutputFormat::Json, false));
+    }
+
+    #[test]
+    fn never_emits_plain_errors_in_github_actions() {
+        assert!(!should_emit_plain_check_errors(OutputFormat::Table, true));
+        assert!(!should_emit_plain_check_errors(OutputFormat::Json, true));
+    }
 }
