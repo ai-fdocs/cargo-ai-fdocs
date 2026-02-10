@@ -40,7 +40,9 @@ Current commands:
 cargo ai-fdocs sync
 cargo ai-fdocs sync --force
 cargo ai-fdocs status
+cargo ai-fdocs status --format json
 cargo ai-fdocs check
+cargo ai-fdocs check --format json
 cargo ai-fdocs init
 ```
 

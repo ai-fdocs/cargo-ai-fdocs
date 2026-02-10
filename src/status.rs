@@ -2,11 +2,11 @@ use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::path::Path;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::config::Config;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum DocsStatus {
     Synced,
     SyncedFallback,
@@ -31,7 +31,7 @@ impl DocsStatus {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct CrateStatus {
     pub crate_name: String,
     pub lock_version: Option<String>,
@@ -176,6 +176,23 @@ pub fn print_status_table(statuses: &[CrateStatus]) {
     print!("{}", format_status_table(statuses));
 }
 
+#[derive(Debug, Serialize)]
+struct StatusReport<'a> {
+    summary: StatusSummary,
+    statuses: &'a [CrateStatus],
+}
+
+pub fn format_status_json(
+    statuses: &[CrateStatus],
+) -> std::result::Result<String, serde_json::Error> {
+    let report = StatusReport {
+        summary: summarize(statuses),
+        statuses,
+    };
+
+    serde_json::to_string_pretty(&report)
+}
+
 fn format_status_table(statuses: &[CrateStatus]) -> String {
     const COL_CRATE: usize = 24;
     const COL_LOCK: usize = 16;
@@ -241,8 +258,8 @@ fn format_status_table(statuses: &[CrateStatus]) -> String {
     output
 }
 
-#[derive(Debug, Default)]
-struct StatusSummary {
+#[derive(Debug, Default, Serialize)]
+pub struct StatusSummary {
     total: usize,
     synced: usize,
     missing: usize,
@@ -256,7 +273,7 @@ impl StatusSummary {
     }
 }
 
-fn summarize(statuses: &[CrateStatus]) -> StatusSummary {
+pub fn summarize(statuses: &[CrateStatus]) -> StatusSummary {
     let mut summary = StatusSummary {
         total: statuses.len(),
         ..StatusSummary::default()
@@ -276,7 +293,7 @@ fn summarize(statuses: &[CrateStatus]) -> StatusSummary {
 
 #[cfg(test)]
 mod tests {
-    use super::{format_status_table, CrateStatus, DocsStatus};
+    use super::{format_status_json, format_status_table, CrateStatus, DocsStatus};
 
     #[test]
     fn formats_empty_status_table_with_zero_summary() {
@@ -288,6 +305,24 @@ mod tests {
         assert!(table.contains("Status"));
         assert!(table.contains("Total: 0 | Synced: 0 | Missing: 0 | Outdated: 0 | Corrupted: 0"));
         assert!(!table.contains("Hint: run `cargo ai-fdocs sync`"));
+    }
+
+    #[test]
+    fn formats_status_json_with_summary_and_entries() {
+        let statuses = vec![CrateStatus {
+            crate_name: "axum".to_string(),
+            lock_version: Some("0.8.1".to_string()),
+            docs_version: Some("0.8.1".to_string()),
+            status: DocsStatus::Synced,
+            reason: "up to date".to_string(),
+        }];
+
+        let json = format_status_json(&statuses).expect("json serialization");
+
+        assert!(json.contains("\"summary\""));
+        assert!(json.contains("\"statuses\""));
+        assert!(json.contains("\"crate_name\": \"axum\""));
+        assert!(json.contains("\"status\": \"Synced\""));
     }
 
     #[test]

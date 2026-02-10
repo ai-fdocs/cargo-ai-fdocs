@@ -14,7 +14,7 @@ use std::sync::Arc;
 
 use tokio::sync::Semaphore;
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use tracing::{error, info, warn};
 
 use crate::config::Config;
@@ -50,10 +50,14 @@ enum Commands {
     Status {
         #[arg(short, long, default_value = "ai-fdocs.toml")]
         config: PathBuf,
+        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+        format: OutputFormat,
     },
     Check {
         #[arg(short, long, default_value = "ai-fdocs.toml")]
         config: PathBuf,
+        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+        format: OutputFormat,
     },
     Init {
         #[arg(short, long, default_value = "ai-fdocs.toml")]
@@ -61,6 +65,12 @@ enum Commands {
         #[arg(long, default_value_t = false)]
         force: bool,
     },
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
+enum OutputFormat {
+    Table,
+    Json,
 }
 
 #[derive(Default)]
@@ -112,8 +122,8 @@ async fn main() {
 async fn run(cli: Cli) -> Result<()> {
     match cli.command {
         Commands::Sync { config, force } => run_sync(&config, force).await,
-        Commands::Status { config } => run_status(&config),
-        Commands::Check { config } => run_check(&config),
+        Commands::Status { config, format } => run_status(&config, format),
+        Commands::Check { config, format } => run_check(&config, format),
         Commands::Init { config, force } => run_init_command(&config, force).await,
     }
 }
@@ -354,18 +364,26 @@ fn emit_check_failures_for_ci(statuses: &[crate::status::CrateStatus]) {
     }
 }
 
-fn run_status(config_path: &PathBuf) -> Result<()> {
+fn run_status(config_path: &PathBuf, format: OutputFormat) -> Result<()> {
     let config = Config::load(config_path)?;
     let rust_versions = resolver::resolve_cargo_versions(PathBuf::from("Cargo.lock").as_path())?;
 
     let rust_dir = storage::rust_output_dir(&config.settings.output_dir);
     let statuses = collect_status(&config, &rust_versions, &rust_dir);
-    print_status_table(&statuses);
+    match format {
+        OutputFormat::Table => print_status_table(&statuses),
+        OutputFormat::Json => {
+            let json = status::format_status_json(&statuses).map_err(|e| {
+                error::AiDocsError::Other(format!("failed to serialize status JSON: {e}"))
+            })?;
+            println!("{json}");
+        }
+    }
 
     Ok(())
 }
 
-fn run_check(config_path: &PathBuf) -> Result<()> {
+fn run_check(config_path: &PathBuf, format: OutputFormat) -> Result<()> {
     let config = Config::load(config_path)?;
     let rust_versions = resolver::resolve_cargo_versions(PathBuf::from("Cargo.lock").as_path())?;
     let rust_dir = storage::rust_output_dir(&config.settings.output_dir);
@@ -376,7 +394,15 @@ fn run_check(config_path: &PathBuf) -> Result<()> {
         .any(|s| !matches!(s.status, DocsStatus::Synced | DocsStatus::SyncedFallback));
 
     if failing {
-        print_status_table(&statuses);
+        match format {
+            OutputFormat::Table => print_status_table(&statuses),
+            OutputFormat::Json => {
+                let json = status::format_status_json(&statuses).map_err(|e| {
+                    error::AiDocsError::Other(format!("failed to serialize status JSON: {e}"))
+                })?;
+                println!("{json}");
+            }
+        }
         emit_check_failures_for_ci(&statuses);
         return Err(error::AiDocsError::Other(
             "Documentation is outdated, missing, or corrupted. Run: cargo ai-fdocs sync"
@@ -384,6 +410,14 @@ fn run_check(config_path: &PathBuf) -> Result<()> {
         ));
     }
 
-    info!("All configured crate docs are up to date.");
+    match format {
+        OutputFormat::Table => info!("All configured crate docs are up to date."),
+        OutputFormat::Json => {
+            let json = status::format_status_json(&statuses).map_err(|e| {
+                error::AiDocsError::Other(format!("failed to serialize status JSON: {e}"))
+            })?;
+            println!("{json}");
+        }
+    }
     Ok(())
 }
