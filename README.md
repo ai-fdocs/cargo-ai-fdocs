@@ -9,6 +9,24 @@ It syncs README/CHANGELOG/guides from GitHub repositories for versions pinned in
 `Cargo.lock`, then stores them locally under `docs/ai/vendor-docs/rust/` so
 Cursor, Copilot, Windsurf, and other assistants can use up-to-date context.
 
+
+## Repository layout (Rust + NPM versions)
+
+This repository currently contains **two aligned implementations** of AI Fresh Docs:
+
+- Rust CLI (`cargo-ai-fdocs`) in the repository root (`src/`, Cargo-based toolchain);
+- NPM/Node.js CLI (`npm-ai-fdocs`) in [`npn/`](./npn).
+
+The `npn/` folder is the NPM version of AI Fresh Docs and is expected to stay
+functionally aligned with the main implementation, with ecosystem-specific
+adaptations for NPM (lockfile/dependency resolution, package metadata source,
+Node build/test toolchain).
+
+Alignment policy for `npn/`:
+- same core command surface: `init`, `sync`, `status`, `check`;
+- same output layout principles (`_INDEX.md`, per-package folders, metadata);
+- same cache/status semantics where possible, adapted for npm packages.
+
 ## Why this exists
 
 In practice, many AI coding failures happen not because the model cannot reason,
