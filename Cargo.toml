@@ -2,7 +2,7 @@
 name = "cargo-ai-fdocs"
 version = "0.1.0"
 edition = "2021"
-description = "Version-locked documentation sync for AI coding assistants"
+description = "Sync documentation from dependencies for AI context"
 license = "MIT"
 
 [[bin]]
@@ -10,7 +10,22 @@ name = "cargo-ai-fdocs"
 path = "src/main.rs"
 
 [dependencies]
-clap = { version = "4.5", features = ["derive"] }
+# CLI
+clap = { version = "4.5", features = ["derive", "env"] }
+
+# Async & HTTP
+tokio = { version = "1.36", features = ["full"] }
+reqwest = { version = "0.11", default-features = false, features = ["rustls-tls", "json"] }
+
+# Config & Data
 serde = { version = "1.0", features = ["derive"] }
-thiserror = "2.0"
 toml = "0.8"
+chrono = { version = "0.4", features = ["serde"] }
+
+# Error Handling & Logging
+thiserror = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Utilities
+regex = "1.10"
