@@ -1,6 +1,9 @@
 use std::env;
 use std::time::Duration;
 
+const MAX_RETRY_ATTEMPTS: usize = 3;
+const RETRY_BASE_BACKOFF_MS: u64 = 500;
+
 use reqwest::{Client, StatusCode};
 use serde::Deserialize;
 use tokio::time::sleep;
@@ -90,15 +93,16 @@ impl GitHubFetcher {
                     is_fallback: false,
                 });
             }
+
+            if res.status() != StatusCode::NOT_FOUND {
+                return Err(Self::status_error(url.as_str(), res.status()));
+            }
         }
 
         let repo_url = format!("https://api.github.com/repos/{owner_repo}");
         let repo_resp = self.send_with_retry(repo_url.as_str()).await?;
         if !repo_resp.status().is_success() {
-            return Err(AiDocsError::Other(format!(
-                "Failed to resolve default branch for {owner_repo}: {}",
-                repo_resp.status()
-            )));
+            return Err(Self::status_error(repo_url.as_str(), repo_resp.status()));
         }
 
         let repo_info: RepoInfo = repo_resp.json().await?;
@@ -140,13 +144,7 @@ impl GitHubFetcher {
             }
 
             if !res.status().is_success() {
-                return Err(AiDocsError::Other(format!(
-                    "Failed to fetch '{}' from {}@{}: {}",
-                    candidate,
-                    repo,
-                    git_ref,
-                    res.status()
-                )));
+                return Err(Self::status_error(url.as_str(), res.status()));
             }
 
             let content = res.text().await?;
@@ -169,48 +167,86 @@ impl GitHubFetcher {
     }
 
     async fn send_with_retry(&self, url: &str) -> Result<reqwest::Response> {
-        let first = self
-            .client
-            .get(url)
-            .send()
-            .await
-            .map_err(|source| AiDocsError::Fetch {
-                url: url.to_string(),
-                source,
-            })?;
+        let mut backoff_ms = RETRY_BASE_BACKOFF_MS;
 
-        if first.status() == StatusCode::TOO_MANY_REQUESTS
-            || first.status() == StatusCode::FORBIDDEN
-        {
-            return Err(AiDocsError::Other(
-                "GitHub API rate limit exceeded. Set GITHUB_TOKEN/GH_TOKEN.".to_string(),
-            ));
-        }
+        for attempt in 1..=MAX_RETRY_ATTEMPTS {
+            let send_result = self.client.get(url).send().await;
 
-        if first.status().is_server_error() {
-            debug!("GitHub 5xx for {url}; retrying once after 2s");
-            sleep(Duration::from_secs(2)).await;
-            let second =
-                self.client
-                    .get(url)
-                    .send()
-                    .await
-                    .map_err(|source| AiDocsError::Fetch {
+            match send_result {
+                Ok(response) => {
+                    let status = response.status();
+
+                    if status == StatusCode::UNAUTHORIZED {
+                        return Err(AiDocsError::GitHubAuth {
+                            url: url.to_string(),
+                            status: status.as_u16(),
+                        });
+                    }
+
+                    if status == StatusCode::FORBIDDEN || status == StatusCode::TOO_MANY_REQUESTS {
+                        return Err(AiDocsError::GitHubRateLimit {
+                            url: url.to_string(),
+                            status: status.as_u16(),
+                        });
+                    }
+
+                    if status.is_server_error() && attempt < MAX_RETRY_ATTEMPTS {
+                        debug!(
+                            "GitHub {status} for {url}; retrying attempt {}/{} after {}ms",
+                            attempt + 1,
+                            MAX_RETRY_ATTEMPTS,
+                            backoff_ms
+                        );
+                        sleep(Duration::from_millis(backoff_ms)).await;
+                        backoff_ms *= 2;
+                        continue;
+                    }
+
+                    return Ok(response);
+                }
+                Err(source) => {
+                    let is_retryable_network =
+                        source.is_timeout() || source.is_connect() || source.is_request();
+
+                    if is_retryable_network && attempt < MAX_RETRY_ATTEMPTS {
+                        debug!(
+                            "Network error for {url}; retrying attempt {}/{} after {}ms: {source}",
+                            attempt + 1,
+                            MAX_RETRY_ATTEMPTS,
+                            backoff_ms
+                        );
+                        sleep(Duration::from_millis(backoff_ms)).await;
+                        backoff_ms *= 2;
+                        continue;
+                    }
+
+                    return Err(AiDocsError::Fetch {
                         url: url.to_string(),
                         source,
-                    })?;
-
-            if second.status() == StatusCode::TOO_MANY_REQUESTS
-                || second.status() == StatusCode::FORBIDDEN
-            {
-                return Err(AiDocsError::Other(
-                    "GitHub API rate limit exceeded. Set GITHUB_TOKEN/GH_TOKEN.".to_string(),
-                ));
+                    });
+                }
             }
-
-            return Ok(second);
         }
 
-        Ok(first)
+        Err(AiDocsError::Other(
+            "unexpected retry flow termination".to_string(),
+        ))
+    }
+
+    fn status_error(url: &str, status: StatusCode) -> AiDocsError {
+        match status {
+            StatusCode::UNAUTHORIZED => AiDocsError::GitHubAuth {
+                url: url.to_string(),
+                status: status.as_u16(),
+            },
+            StatusCode::FORBIDDEN | StatusCode::TOO_MANY_REQUESTS => AiDocsError::GitHubRateLimit {
+                url: url.to_string(),
+                status: status.as_u16(),
+            },
+            _ => AiDocsError::HttpStatus {
+                url: url.to_string(),
+                status: status.as_u16(),
+            },
+        }
     }
 }

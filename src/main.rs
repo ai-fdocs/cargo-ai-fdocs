@@ -18,7 +18,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use tracing::{error, info, warn};
 
 use crate::config::Config;
-use crate::error::Result;
+use crate::error::{Result, SyncErrorKind};
 use crate::fetcher::github::{FileRequest, GitHubFetcher};
 use crate::init::run_init as run_init_command;
 use crate::status::{collect_status, print_status_table, DocsStatus};
@@ -79,6 +79,24 @@ struct SyncStats {
     cached: usize,
     skipped: usize,
     errors: usize,
+    auth_errors: usize,
+    rate_limit_errors: usize,
+    network_errors: usize,
+    not_found_errors: usize,
+    other_errors: usize,
+}
+
+impl SyncStats {
+    fn record_error(&mut self, kind: SyncErrorKind) {
+        self.errors += 1;
+        match kind {
+            SyncErrorKind::Auth => self.auth_errors += 1,
+            SyncErrorKind::RateLimit => self.rate_limit_errors += 1,
+            SyncErrorKind::Network => self.network_errors += 1,
+            SyncErrorKind::NotFound => self.not_found_errors += 1,
+            SyncErrorKind::Other => self.other_errors += 1,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -86,7 +104,7 @@ enum SyncOutcome {
     Synced(storage::SavedCrate),
     Cached(Option<storage::SavedCrate>),
     Skipped,
-    Error,
+    Error(SyncErrorKind),
 }
 
 #[tokio::main]
@@ -180,7 +198,7 @@ async fn run_sync(config_path: &Path, force: bool) -> Result<()> {
             Ok(result) => result,
             Err(e) => {
                 warn!("sync worker failed: {e}");
-                SyncOutcome::Error
+                SyncOutcome::Error(SyncErrorKind::Other)
             }
         };
         match result {
@@ -195,7 +213,7 @@ async fn run_sync(config_path: &Path, force: bool) -> Result<()> {
                 stats.cached += 1;
             }
             SyncOutcome::Skipped => stats.skipped += 1,
-            SyncOutcome::Error => stats.errors += 1,
+            SyncOutcome::Error(kind) => stats.record_error(kind),
         }
     }
 
@@ -205,6 +223,17 @@ async fn run_sync(config_path: &Path, force: bool) -> Result<()> {
         "✅ Sync complete: {} synced, {} cached, {} skipped, {} errors",
         stats.synced, stats.cached, stats.skipped, stats.errors
     );
+
+    if stats.errors > 0 {
+        info!(
+            "   error breakdown: auth={}, rate-limit={}, network={}, not-found={}, other={}",
+            stats.auth_errors,
+            stats.rate_limit_errors,
+            stats.network_errors,
+            stats.not_found_errors,
+            stats.other_errors
+        );
+    }
 
     Ok(())
 }
@@ -243,7 +272,7 @@ async fn sync_one_crate(
         Ok(r) => r,
         Err(e) => {
             warn!("  ✗ failed to resolve ref for {crate_name}@{version}: {e}");
-            return SyncOutcome::Error;
+            return SyncOutcome::Error(e.sync_kind());
         }
     };
 
@@ -275,7 +304,7 @@ async fn sync_one_crate(
 
     if fetched_files.is_empty() {
         warn!("  ✗ no files fetched for {crate_name}@{version}");
-        return SyncOutcome::Error;
+        return SyncOutcome::Error(SyncErrorKind::NotFound);
     }
 
     let save_ctx = storage::SaveContext {
@@ -295,7 +324,7 @@ async fn sync_one_crate(
         Ok(saved) => SyncOutcome::Synced(saved),
         Err(e) => {
             warn!("  ✗ failed to save {crate_name}@{version}: {e}");
-            SyncOutcome::Error
+            SyncOutcome::Error(e.sync_kind())
         }
     }
 }
