@@ -7,7 +7,7 @@ use crate::error::{AiDocsError, Result};
 
 pub fn resolve_cargo_versions(path: &Path) -> Result<HashMap<String, String>> {
     if !path.exists() {
-        return Err(AiDocsError::CargoLockNotFound(path.to_path_buf()));
+        return Err(AiDocsError::CargoLockNotFound);
     }
 
     let content = std::fs::read_to_string(path)?;
