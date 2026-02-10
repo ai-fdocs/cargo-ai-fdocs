@@ -31,3 +31,36 @@ pub fn resolve_cargo_versions(path: &Path) -> Result<HashMap<String, String>> {
 
     Ok(versions)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_cargo_versions;
+    use std::fs;
+
+    #[test]
+    fn parses_lockfile_packages_into_map() {
+        let tmp = std::env::temp_dir().join(format!(
+            "ai-fdocs-resolver-{}-{}",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("t")
+        ));
+        let _ = fs::remove_file(&tmp);
+
+        let content = r#"
+[[package]]
+name = "serde"
+version = "1.0.210"
+
+[[package]]
+name = "tokio"
+version = "1.44.0"
+"#;
+        fs::write(&tmp, content).expect("write lockfile");
+
+        let versions = resolve_cargo_versions(&tmp).expect("resolve versions");
+        assert_eq!(versions.get("serde"), Some(&"1.0.210".to_string()));
+        assert_eq!(versions.get("tokio"), Some(&"1.44.0".to_string()));
+
+        let _ = fs::remove_file(&tmp);
+    }
+}

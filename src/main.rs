@@ -313,14 +313,14 @@ async fn sync_one_crate(
         max_file_size_kb,
     };
 
-    match storage::save_crate_files(
-        &rust_output_dir,
-        &crate_name,
-        &version,
-        &save_ctx,
-        &fetched_files,
-        &crate_doc,
-    ) {
+    let save_req = storage::SaveRequest {
+        crate_name: &crate_name,
+        version: &version,
+        fetched_files: &fetched_files,
+        crate_config: &crate_doc,
+    };
+
+    match storage::save_crate_files(&rust_output_dir, &save_ctx, save_req) {
         Ok(saved) => SyncOutcome::Synced(saved),
         Err(e) => {
             warn!("  ✗ failed to save {crate_name}@{version}: {e}");

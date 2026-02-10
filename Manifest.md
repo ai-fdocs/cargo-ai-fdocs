@@ -196,6 +196,14 @@ JSON-контракт `status/check --format json`:
 ### Техдолг инструментов (ближайший рефакторинг)
 - `cargo clippy` всё ещё может сигнализировать `too_many_arguments` для `storage::save_crate_files`; это не блокер релиза, но хороший кандидат на декомпозицию API.
 
+
+### Статус (текущее состояние)
+- ✅ Retry/backoff и классификация ошибок (auth/rate-limit/not-found/network) внедрены.
+- ✅ CI-контракт `check` + `--format json` + готовые GitHub Actions recipes задокументированы.
+- ✅ Кроссплатформенный smoke matrix (Linux/macOS/Windows) и policy совместимости зафиксированы.
+- ✅ Интеграционные сценарии покрывают fallback на branch и partial failures fetch-пайплайна.
+- ✅ Техдолг `too_many_arguments` вокруг `storage::save_crate_files` снят рефакторингом API.
+
 ### После v1.0
 - Расширение экосистемы sibling-проектами (Node/npm и далее).
 - docs.rs как дополнительный источник с приоритетной стратегией merge/fallback.

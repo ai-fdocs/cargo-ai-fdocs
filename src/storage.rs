@@ -184,15 +184,19 @@ pub fn is_cached(
     }
 }
 
+pub struct SaveRequest<'a> {
+    pub crate_name: &'a str,
+    pub version: &'a str,
+    pub fetched_files: &'a [FetchedFile],
+    pub crate_config: &'a CrateDoc,
+}
+
 pub fn save_crate_files(
     output_dir: &Path,
-    crate_name: &str,
-    version: &str,
     save_ctx: &SaveContext<'_>,
-    fetched_files: &[FetchedFile],
-    crate_config: &CrateDoc,
+    req: SaveRequest<'_>,
 ) -> Result<SavedCrate> {
-    let crate_dir = output_dir.join(format!("{crate_name}@{version}"));
+    let crate_dir = output_dir.join(format!("{}@{}", req.crate_name, req.version));
 
     if crate_dir.exists() {
         fs::remove_dir_all(&crate_dir)?;
@@ -201,12 +205,12 @@ pub fn save_crate_files(
 
     let mut saved_names = Vec::new();
 
-    for file in fetched_files {
+    for file in req.fetched_files {
         let flat_name = flatten_filename(&file.path);
         let mut content = file.content.clone();
 
         if file.path.to_lowercase().contains("changelog") {
-            content = changelog::truncate_changelog(&content, version);
+            content = changelog::truncate_changelog(&content, req.version);
         }
 
         content = truncate_if_needed(&content, save_ctx.max_file_size_kb);
@@ -218,7 +222,7 @@ pub fn save_crate_files(
                 &save_ctx.resolved.git_ref,
                 &file.path,
                 save_ctx.resolved.is_fallback,
-                version,
+                req.version,
                 &file.source_url,
             );
         }
@@ -231,30 +235,30 @@ pub fn save_crate_files(
 
     let meta = CrateMeta {
         schema_version: META_SCHEMA_VERSION,
-        version: version.to_string(),
+        version: req.version.to_string(),
         git_ref: save_ctx.resolved.git_ref.clone(),
         fetched_at: Utc::now().format("%Y-%m-%d").to_string(),
         is_fallback: save_ctx.resolved.is_fallback,
-        config_fingerprint: Some(crate_config_fingerprint(crate_config)),
+        config_fingerprint: Some(crate_config_fingerprint(req.crate_config)),
     };
 
     save_meta(&crate_dir.join(".aifd-meta.toml"), &meta)?;
 
     info!(
         "  💾 {}@{}: {} files saved to {:?}",
-        crate_name,
-        version,
+        req.crate_name,
+        req.version,
         saved_names.len(),
         crate_dir
     );
 
     let saved = SavedCrate {
-        name: crate_name.to_string(),
-        version: version.to_string(),
+        name: req.crate_name.to_string(),
+        version: req.version.to_string(),
         git_ref: save_ctx.resolved.git_ref.clone(),
         is_fallback: save_ctx.resolved.is_fallback,
         files: saved_names,
-        ai_notes: crate_config.ai_notes.clone(),
+        ai_notes: req.crate_config.ai_notes.clone(),
     };
 
     fs::write(crate_dir.join("_SUMMARY.md"), render_crate_summary(&saved))?;
