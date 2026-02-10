@@ -21,12 +21,7 @@ export class GitHubClient {
   private token = process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN;
 
   async resolveRef(repo: string, _name: string, version: string): Promise<ResolvedRef> {
-    const candidates = [
-      `v${version}`,
-      version,
-      `refs/tags/v${version}`,
-      `refs/tags/${version}`,
-    ];
+    const candidates = [`v${version}`, version];
 
     for (const ref of candidates) {
       if (await this.refExists(repo, ref)) {
@@ -86,14 +81,13 @@ export class GitHubClient {
   }
 
   private async refExists(repo: string, ref: string): Promise<boolean> {
-    const url = `https://api.github.com/repos/${repo}/git/ref/${ref.startsWith("refs/") ? ref : `heads/${ref}`}`;
-    const resp = await fetch(url, { headers: this.headers() });
-    if (resp.ok) return true;
+    const normalized = ref.replace(/^refs\//, "");
+    const targets = normalized.includes("/") ? [normalized] : [`heads/${normalized}`, `tags/${normalized}`];
 
-    if (!ref.startsWith("refs/")) {
-      const tagUrl = `https://api.github.com/repos/${repo}/git/ref/tags/${ref}`;
-      const tagResp = await fetch(tagUrl, { headers: this.headers() });
-      return tagResp.ok;
+    for (const target of targets) {
+      const url = `https://api.github.com/repos/${repo}/git/ref/${target}`;
+      const resp = await fetch(url, { headers: this.headers() });
+      if (resp.ok) return true;
     }
 
     return false;
@@ -160,6 +154,11 @@ export async function fetchDocsFromNpmTarball(
       }
 
       const fullPath = header.name.replace(/^package\//, "");
+      if (!fullPath || fullPath.startsWith("/") || fullPath.includes("..")) {
+        stream.resume();
+        stream.on("end", next);
+        return;
+      }
       const relPath = normalizedSubpath && fullPath.startsWith(normalizedSubpath)
         ? fullPath.slice(normalizedSubpath.length)
         : fullPath;
