@@ -2,6 +2,7 @@ mod config;
 mod error;
 mod fetcher;
 mod resolver;
+mod status;
 
 use std::path::PathBuf;
 
@@ -12,6 +13,7 @@ use crate::config::Config;
 use crate::error::Result;
 use crate::fetcher::GitHubFetcher;
 use crate::resolver::LockResolver;
+use crate::status::{exit_code, is_healthy, SyncStatus};
 
 #[derive(Parser)]
 #[command(name = "cargo-ai-fdocs")]
@@ -34,6 +36,7 @@ enum Commands {
         force: bool,
     },
     Status,
+    Check,
 }
 
 #[tokio::main]
@@ -140,11 +143,21 @@ async fn run() -> Result<()> {
             }
         }
         Commands::Status => {
-            println!("(Status command implementation pending Stage 4)");
+            let statuses = collect_statuses();
+            println!("Current statuses: {:?}", statuses);
+            println!("Healthy: {}", is_healthy(&statuses));
+        }
+        Commands::Check => {
+            let statuses = collect_statuses();
+            std::process::exit(exit_code(&statuses));
         }
     }
 
     Ok(())
+}
+
+fn collect_statuses() -> Vec<SyncStatus> {
+    Vec::new()
 }
 
 fn print_config_example() {
