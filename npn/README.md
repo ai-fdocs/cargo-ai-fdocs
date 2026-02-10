@@ -36,3 +36,6 @@ node dist/cli.js --help
 - `ai-fdocs sync [--force]`
 - `ai-fdocs status`
 - `ai-fdocs check`
+## План развития
+
+Подробная дорожная карта: [`ROADMAP.md`](./ROADMAP.md).
