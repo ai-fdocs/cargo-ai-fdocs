@@ -150,13 +150,25 @@ async fn run() -> Result<()> {
             }
         }
         Commands::Status => {
-            let statuses = collect_statuses();
-            println!("Current statuses: {:?}", statuses);
-            println!("Healthy: {}", is_healthy(&statuses));
-        }
-        Commands::Check => {
-            let statuses = collect_statuses();
-            std::process::exit(exit_code(&statuses));
+            let config_path = PathBuf::from("ai-fdocs.toml");
+            let config = match Config::load(&config_path) {
+                Ok(config) => config,
+                Err(crate::error::AiDocsError::ConfigNotFound(_)) => {
+                    print_config_example();
+                    return Ok(());
+                }
+                Err(err) => return Err(err),
+            };
+
+            let lock_path = PathBuf::from("Cargo.lock");
+            let locked_versions = LockResolver::resolve(&lock_path)?;
+
+            let statuses = status::collect_status(
+                &config,
+                &locked_versions,
+                config.settings.output_dir.as_path(),
+            );
+            status::print_status_table(&statuses);
         }
     }
 
