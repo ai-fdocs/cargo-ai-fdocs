@@ -138,7 +138,29 @@ async fn run_sync(config_path: &PathBuf, force: bool) -> Result<()> {
 
         info!("Syncing {crate_name}@{version}...");
 
-        let mut crate_saved: Option<storage::SavedCrate> = None;
+                let Some(version) = locked_versions.get(name) else {
+                    warn!("Crate '{name}' not found in Cargo.lock. Skipping.");
+                    continue;
+                };
+                info!("  Locked version: {version}");
+
+                let Some(github_source) = crate_cfg
+                    .sources
+                    .iter()
+                    .find(|source| source.source_type == SourceType::Github)
+                else {
+                    warn!("  ❌ no source with type='github' configured. Skipping.");
+                    continue;
+                };
+
+                let resolved = fetcher
+                    .resolve_ref(&github_source.repo, name, version)
+                    .await?;
+                if resolved.is_fallback {
+                    warn!("  ⚠ Fallback to branch: {}", resolved.git_ref);
+                } else {
+                    info!("  Tag found: {}", resolved.git_ref);
+                }
 
         for source in &crate_doc.sources {
             match source {
@@ -150,31 +172,14 @@ async fn run_sync(config_path: &PathBuf, force: bool) -> Result<()> {
                             stats.errors += 1;
                             continue;
                         }
-                    };
-
-                    if resolved.is_fallback {
-                        warn!(
-                            "  ⚠ no exact tag for {crate_name}@{version}, using {}",
-                            resolved.git_ref
-                        );
                     }
-
-                    let results = fetcher.fetch_files(repo, &resolved.git_ref, files).await;
-                    let fetched_files: Vec<_> = results
-                        .into_iter()
-                        .filter_map(|r| match r {
-                            Ok(file) => Some(file),
-                            Err(e) => {
-                                warn!("  ✗ {e}");
-                                None
-                            }
-                        })
-                        .collect();
-
-                    if fetched_files.is_empty() {
-                        warn!("  ✗ no files fetched for {crate_name}@{version}");
-                        stats.errors += 1;
-                        continue;
+                } else {
+                    match fetcher
+                        .fetch_file(&github_source.repo, &resolved.git_ref, "README.md")
+                        .await?
+                    {
+                        Some(content) => info!("  ✅ README.md fetched ({} bytes)", content.len()),
+                        None => warn!("  ❌ README.md not found at README.md"),
                     }
 
                     let saved = storage::save_crate_files(
