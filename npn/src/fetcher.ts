@@ -1,4 +1,7 @@
 import { AiDocsError } from "./error.js";
+import { createGunzip } from "node:zlib";
+import { Readable } from "node:stream";
+import tar, { type Headers } from "tar-stream";
 
 export interface ResolvedRef {
   gitRef: string;
@@ -120,4 +123,79 @@ export class GitHubClient {
       "User-Agent": "ai-fdocs/0.2.0",
     };
   }
+}
+
+export async function fetchDocsFromNpmTarball(
+  tarballUrl: string,
+  subpath?: string,
+  explicitFiles?: string[]
+): Promise<FetchedFile[]> {
+  const resp = await fetch(tarballUrl);
+  if (!resp.ok) {
+    throw new AiDocsError(`Failed to download npm tarball: ${resp.status}`, "NPM_TARBALL_DOWNLOAD");
+  }
+
+  const raw = Buffer.from(await resp.arrayBuffer());
+  const extract = tar.extract();
+  const out: FetchedFile[] = [];
+
+  const normalizedSubpath = subpath ? `${subpath.replace(/^\/+|\/+$/g, "")}/` : "";
+  const explicitSet = explicitFiles ? new Set(explicitFiles) : null;
+  const preferred = new Set([
+    "readme.md",
+    "changelog.md",
+    "changes.md",
+    "history.md",
+    "license",
+    "license.md",
+    "docs/readme.md",
+  ]);
+
+  await new Promise<void>((resolve, reject) => {
+    extract.on("entry", (header: Headers, stream: NodeJS.ReadableStream, next: () => void) => {
+      if (header.type !== "file") {
+        stream.resume();
+        stream.on("end", next);
+        return;
+      }
+
+      const fullPath = header.name.replace(/^package\//, "");
+      const relPath = normalizedSubpath && fullPath.startsWith(normalizedSubpath)
+        ? fullPath.slice(normalizedSubpath.length)
+        : fullPath;
+
+      const shouldInclude = (() => {
+        if (explicitSet) return explicitSet.has(relPath);
+        if (normalizedSubpath && !fullPath.startsWith(normalizedSubpath)) return false;
+        const lower = relPath.toLowerCase();
+        if (preferred.has(lower)) return true;
+        return lower.startsWith("docs/") && lower.endsWith(".md");
+      })();
+
+      if (!shouldInclude) {
+        stream.resume();
+        stream.on("end", next);
+        return;
+      }
+
+      const chunks: Buffer[] = [];
+      stream.on("data", (chunk: Buffer) => chunks.push(chunk));
+      stream.on("error", reject);
+      stream.on("end", () => {
+        out.push({ path: relPath, content: Buffer.concat(chunks).toString("utf-8") });
+        next();
+      });
+    });
+
+    extract.on("finish", resolve);
+    extract.on("error", reject);
+
+    Readable.from(raw)
+      .pipe(createGunzip())
+      .on("error", reject)
+      .pipe(extract)
+      .on("error", reject);
+  });
+
+  return out.slice(0, 40);
 }

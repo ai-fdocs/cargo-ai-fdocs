@@ -3,11 +3,12 @@ import chalk from "chalk";
 import pLimit from "p-limit";
 import { loadConfig } from "../config.js";
 import { resolveVersions } from "../resolver.js";
-import { GitHubClient, type FetchedFile } from "../fetcher.js";
+import { GitHubClient, fetchDocsFromNpmTarball, type FetchedFile } from "../fetcher.js";
 import { computeConfigHash } from "../config-hash.js";
 import { isCachedV2, savePackageFiles, prune, readCachedInfo, type SavedPackage } from "../storage.js";
 import { generateIndex } from "../index.js";
 import { generateSummary, type SummaryFile } from "../summary.js";
+import { NpmRegistryClient } from "../registry.js";
 
 const MAX_CONCURRENT = 8;
 
@@ -30,6 +31,7 @@ export async function cmdSync(projectRoot: string, force: boolean): Promise<void
   }
 
   const github = new GitHubClient();
+  const npmRegistry = new NpmRegistryClient();
   const entries = Object.entries(config.packages);
   const limit = pLimit(MAX_CONCURRENT);
 
@@ -43,20 +45,34 @@ export async function cmdSync(projectRoot: string, force: boolean): Promise<void
       return { saved: readCachedInfo(outputDir, name, version, pkgConfig), status: "cached" };
     }
 
-    let resolved;
-    try {
-      resolved = await github.resolveRef(pkgConfig.repo, name, version);
-    } catch (e) {
-      return { saved: null, status: "error", message: `${name}@${version}: ${(e as Error).message}` };
-    }
-
     let fetchedFiles: FetchedFile[];
-    try {
-      fetchedFiles = pkgConfig.files
-        ? await github.fetchExplicitFiles(pkgConfig.repo, resolved.gitRef, pkgConfig.files)
-        : await github.fetchDefaultFiles(pkgConfig.repo, resolved.gitRef, pkgConfig.subpath);
-    } catch (e) {
-      return { saved: null, status: "error", message: `${name}@${version}: ${(e as Error).message}` };
+    let resolved = { gitRef: "npm-tarball", isFallback: false };
+
+    if (config.settings.experimental_npm_tarball) {
+      try {
+        const tarballUrl = await npmRegistry.getTarballUrl(name, version);
+        if (!tarballUrl) {
+          return { saved: null, status: "error", message: `${name}@${version}: no npm tarball URL` };
+        }
+
+        fetchedFiles = await fetchDocsFromNpmTarball(tarballUrl, pkgConfig.subpath, pkgConfig.files);
+      } catch (e) {
+        return { saved: null, status: "error", message: `${name}@${version}: ${(e as Error).message}` };
+      }
+    } else {
+      try {
+        resolved = await github.resolveRef(pkgConfig.repo, name, version);
+      } catch (e) {
+        return { saved: null, status: "error", message: `${name}@${version}: ${(e as Error).message}` };
+      }
+
+      try {
+        fetchedFiles = pkgConfig.files
+          ? await github.fetchExplicitFiles(pkgConfig.repo, resolved.gitRef, pkgConfig.files)
+          : await github.fetchDefaultFiles(pkgConfig.repo, resolved.gitRef, pkgConfig.subpath);
+      } catch (e) {
+        return { saved: null, status: "error", message: `${name}@${version}: ${(e as Error).message}` };
+      }
     }
 
     if (fetchedFiles.length === 0) return { saved: null, status: "skipped", message: `${name}@${version}: no files found` };

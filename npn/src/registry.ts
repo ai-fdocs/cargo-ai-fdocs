@@ -17,6 +17,12 @@ interface NpmPackageResponse {
     | string;
 }
 
+interface NpmVersionResponse {
+  dist?: {
+    tarball?: string;
+  };
+}
+
 export class NpmRegistryClient {
   private baseUrl = "https://registry.npmjs.org";
 
@@ -38,6 +44,21 @@ export class NpmRegistryClient {
 
       if (!resp.ok) return null;
       return parsePackageInfo((await resp.json()) as NpmPackageResponse);
+    } catch {
+      return null;
+    }
+  }
+
+  async getTarballUrl(name: string, version: string): Promise<string | null> {
+    const encodedName = name.replace("/", "%2F");
+    const encodedVersion = encodeURIComponent(version);
+    const url = `${this.baseUrl}/${encodedName}/${encodedVersion}`;
+
+    try {
+      const resp = await fetch(url, { headers: { Accept: "application/json" } });
+      if (!resp.ok) return null;
+      const data = (await resp.json()) as NpmVersionResponse;
+      return data.dist?.tarball ?? null;
     } catch {
       return null;
     }

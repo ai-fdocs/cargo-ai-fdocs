@@ -15,6 +15,7 @@ export interface Config {
     output_dir: string;
     prune: boolean;
     max_file_size_kb: number;
+    experimental_npm_tarball: boolean;
   };
   packages: Record<string, PackageConfig>;
 }
@@ -36,6 +37,7 @@ export function loadConfig(projectRoot: string): Config {
       output_dir: String(settings.output_dir ?? "docs/ai/vendor-docs/node"),
       prune: Boolean(settings.prune ?? true),
       max_file_size_kb: Number(settings.max_file_size_kb ?? 512),
+      experimental_npm_tarball: Boolean(settings.experimental_npm_tarball ?? false),
     },
     packages,
   };
