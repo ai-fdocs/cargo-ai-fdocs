@@ -131,6 +131,46 @@ backward compatibility, but new configs should use `repo`.
 
 In CI (`cargo ai-fdocs check`), failures include per-crate reasons; in GitHub Actions they are additionally emitted as `::error` annotations.
 
+### CI recipe (GitHub Actions)
+
+```yaml
+name: ai-fdocs-check
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  check-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check ai-fdocs status (JSON)
+        run: cargo ai-fdocs check --format json
+```
+
+### JSON output contract (`status/check --format json`)
+
+Top-level object:
+- `summary`: counters for current run
+  - `total`, `synced`, `missing`, `outdated`, `corrupted`
+- `statuses`: per-crate entries
+  - `crate_name`, `lock_version`, `docs_version`, `status`, `reason`
+
+`status` enum values:
+- `Synced`
+- `SyncedFallback`
+- `Outdated`
+- `Missing`
+- `Corrupted`
+
 
 For Cursor-like tools, point instructions to:
 - `docs/ai/vendor-docs/rust/_INDEX.md` first,

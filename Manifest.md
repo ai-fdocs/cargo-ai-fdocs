@@ -139,6 +139,19 @@ docs/ai/vendor-docs/rust/
 
 В CI-режиме `check` должен показывать причины по каждому проблемному crate; в GitHub Actions — дополнительно печатать `::error` аннотации.
 
+Рецепт для GitHub Actions (минимальный):
+```yaml
+- uses: actions/checkout@v4
+- uses: dtolnay/rust-toolchain@stable
+- uses: Swatinem/rust-cache@v2
+- run: cargo ai-fdocs check --format json
+```
+
+JSON-контракт `status/check --format json`:
+- `summary.{total,synced,missing,outdated,corrupted}`
+- `statuses[].{crate_name,lock_version,docs_version,status,reason}`
+- `status in {Synced,SyncedFallback,Outdated,Missing,Corrupted}`
+
 ### v0.3 (stability envelope)
 - Зафиксировать схему `.aifd-meta.toml` и добавить versioned cache/migration policy.
 - Улучшить UX `_INDEX.md` для больших dependency graph (навигация, секции, подсказки для AI).
