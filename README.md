@@ -127,42 +127,40 @@ cargo ai-fdocs sync
 
 ## Configuration
 
+Minimal valid config:
+
+```toml
+[crates.serde]
+sources = [{ type = "github", repo = "serde-rs/serde" }]
+```
+
+Extended example (multiple files + notes):
+
 ```toml
 [settings]
 output_dir = "docs/ai/vendor-docs/rust"
 max_file_size_kb = 200
 prune = true
 
-[crates.axum]
-repo = "tokio-rs/axum"
-ai_notes = """
-Primary web framework. Use axum 0.7 patterns:
-- Router::new().route() for routing
-- extract::State for shared state
-- Json/Path/Query extractors for request data
-"""
-
 [crates.serde]
-repo = "serde-rs/serde"
+sources = [{ type = "github", repo = "serde-rs/serde" }]
 ai_notes = "Use #[derive(Serialize, Deserialize)] for DTOs."
 
 [crates.sqlx]
-repo = "launchbadge/sqlx"
+sources = [{ type = "github", repo = "launchbadge/sqlx" }]
 files = ["README.md", "CHANGELOG.md", "docs/migration-guide.md"]
 ai_notes = "Use compile-time checked queries with sqlx::query! macro."
-
-[crates.axum-core]
-repo = "tokio-rs/axum"
-subpath = "axum-core"
 ```
+
+A ready-to-copy version of this extended example lives in `examples/ai-docs.toml`
+(you can copy it to project root as `ai-fdocs.toml`).
 
 ### Config reference
 - `[settings]` — global behavior
 - `[crates.<name>]` — one section per dependency
 
-Fields:
-- `repo` (required): `owner/repo`
-- `subpath` (optional): monorepo subdir
+Fields in `[crates.<name>]`:
+- `sources` (required): list of source objects, currently `[{ type = "github", repo = "owner/repo" }]`
 - `files` (optional): explicit files to fetch
 - `ai_notes` (optional): project-specific guidance injected into index
 
