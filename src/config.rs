@@ -24,9 +24,12 @@ pub struct Settings {
 
     #[serde(default = "default_true")]
     pub prune: bool,
+
+    #[serde(default = "default_sync_concurrency")]
+    pub sync_concurrency: usize,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct CrateDoc {
     /// New format: explicit repository in crate section.
     pub repo: Option<String>,
@@ -93,12 +96,17 @@ fn default_true() -> bool {
     true
 }
 
+fn default_sync_concurrency() -> usize {
+    8
+}
+
 impl Default for Settings {
     fn default() -> Self {
         Self {
             output_dir: default_output_dir(),
             max_file_size_kb: default_max_file_size_kb(),
             prune: default_true(),
+            sync_concurrency: default_sync_concurrency(),
         }
     }
 }
@@ -116,20 +124,16 @@ impl Config {
     }
 
     fn validate(&self) -> Result<()> {
-        for (crate_name, crate_cfg) in &self.crates {
-            if crate_cfg.sources.is_empty() {
-                return Err(AiDocsError::InvalidConfig(format!(
-                    "crate '{crate_name}' must define at least one source"
-                )));
-            }
+        if self.settings.sync_concurrency == 0 {
+            return Err(AiDocsError::InvalidConfig(
+                "settings.sync_concurrency must be greater than 0".to_string(),
+            ));
+        }
 
-            let has_github = crate_cfg
-                .sources
-                .iter()
-                .any(|source| source.source_type == SourceType::Github);
-            if !has_github {
+        for (crate_name, crate_cfg) in &self.crates {
+            if crate_cfg.github_repo().is_none() {
                 return Err(AiDocsError::InvalidConfig(format!(
-                    "crate '{crate_name}' must define a source with type = 'github'"
+                    "crate '{crate_name}' must define `repo` or legacy `sources` with GitHub"
                 )));
             }
         }
@@ -147,16 +151,44 @@ mod tests {
     use super::Config;
 
     #[test]
-    fn readme_example_parses_with_config_load() {
+    fn example_config_parses_with_config_load() {
         let path = Path::new("examples/ai-docs.toml");
-        let config = Config::load(path).expect("README example must parse");
+        let config = Config::load(path).expect("example config must parse");
 
         assert!(config.crates.contains_key("serde"));
         assert!(config.crates.contains_key("sqlx"));
     }
 
     #[test]
-    fn config_without_sources_fails_validation() {
+    fn config_with_zero_sync_concurrency_fails_validation() {
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time should be valid")
+            .as_nanos();
+        let path =
+            std::env::temp_dir().join(format!("ai-fdocs-invalid-sync-concurrency-{suffix}.toml"));
+
+        fs::write(
+            &path,
+            r#"[settings]
+sync_concurrency = 0
+
+[crates.serde]
+repo = "serde-rs/serde"
+"#,
+        )
+        .expect("must write temporary config");
+
+        let err = Config::load(&path).expect_err("zero sync_concurrency must fail");
+        fs::remove_file(&path).expect("must cleanup temporary config");
+
+        assert!(err
+            .to_string()
+            .contains("settings.sync_concurrency must be greater than 0"));
+    }
+
+    #[test]
+    fn config_without_repo_or_sources_fails_validation() {
         let suffix = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("system time should be valid")
@@ -166,9 +198,11 @@ mod tests {
         fs::write(&path, "[crates.serde]\nai_notes = \"x\"\n")
             .expect("must write temporary config");
 
-        let err = Config::load(&path).expect_err("config without sources must fail");
+        let err = Config::load(&path).expect_err("config without repo/sources must fail");
         fs::remove_file(&path).expect("must cleanup temporary config");
 
-        assert!(err.to_string().contains("must define at least one source"));
+        assert!(err
+            .to_string()
+            .contains("must define `repo` or legacy `sources` with GitHub"));
     }
 }

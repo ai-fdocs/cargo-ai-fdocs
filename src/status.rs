@@ -1,7 +1,6 @@
 use std::collections::HashMap;
-use std::fmt;
 use std::fmt::Write as _;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde::Deserialize;
 
@@ -17,7 +16,7 @@ pub enum DocsStatus {
 }
 
 impl DocsStatus {
-    fn as_str(self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::Synced => "Synced",
             Self::SyncedFallback => "SyncedFallback",
@@ -25,6 +24,10 @@ impl DocsStatus {
             Self::Missing => "Missing",
             Self::Corrupted => "Corrupted",
         }
+    }
+
+    fn is_problem(self) -> bool {
+        matches!(self, Self::Outdated | Self::Missing | Self::Corrupted)
     }
 }
 
@@ -34,6 +37,7 @@ pub struct CrateStatus {
     pub lock_version: Option<String>,
     pub docs_version: Option<String>,
     pub status: DocsStatus,
+    pub reason: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -61,17 +65,25 @@ pub fn collect_status(
                     lock_version: None,
                     docs_version: None,
                     status: DocsStatus::Missing,
+                    reason: "crate missing in Cargo.lock".to_string(),
                 };
             };
 
             let expected_dir = output_dir.join(format!("{crate_name}@{lock_version}"));
-
             if !expected_dir.is_dir() {
                 let docs_version = discover_existing_version(output_dir, &crate_name);
-                let status = if docs_version.is_some() {
-                    DocsStatus::Outdated
+                let (status, reason) = if let Some(existing) = docs_version.clone() {
+                    (
+                        DocsStatus::Outdated,
+                        format!(
+                            "cached docs version {existing} differs from lock version {lock_version}"
+                        ),
+                    )
                 } else {
-                    DocsStatus::Missing
+                    (
+                        DocsStatus::Missing,
+                        "no synced docs found for this crate".to_string(),
+                    )
                 };
 
                 return CrateStatus {
@@ -79,20 +91,85 @@ pub fn collect_status(
                     lock_version: Some(lock_version),
                     docs_version,
                     status,
+                    reason,
                 };
             }
-            None => classify_unexpected_dirs(output_dir, crate_name),
-        };
 
-        statuses.push(CrateStatus {
-            name: crate_name.to_string(),
-            lock_version: lock_versions.get(crate_name).cloned(),
-            status,
-        });
+            let meta_path = expected_dir.join(".aifd-meta.toml");
+            let Ok(meta_raw) = std::fs::read_to_string(&meta_path) else {
+                return CrateStatus {
+                    crate_name,
+                    lock_version: Some(lock_version.clone()),
+                    docs_version: Some(lock_version),
+                    status: DocsStatus::Corrupted,
+                    reason: ".aifd-meta.toml is missing or unreadable".to_string(),
+                };
+            };
+
+            let Ok(meta) = toml::from_str::<MetaFile>(&meta_raw) else {
+                return CrateStatus {
+                    crate_name,
+                    lock_version: Some(lock_version.clone()),
+                    docs_version: Some(lock_version),
+                    status: DocsStatus::Corrupted,
+                    reason: ".aifd-meta.toml has invalid TOML".to_string(),
+                };
+            };
+
+            let docs_version = meta
+                .version
+                .or(meta.lock_version)
+                .unwrap_or_else(|| lock_version.clone());
+
+            let (status, reason) = if docs_version != lock_version {
+                (
+                    DocsStatus::Outdated,
+                    format!(
+                        "metadata version {docs_version} differs from lock version {lock_version}"
+                    ),
+                )
+            } else if meta.is_fallback.or(meta.fallback).unwrap_or(false) {
+                (
+                    DocsStatus::SyncedFallback,
+                    "synced from fallback branch (no exact tag found)".to_string(),
+                )
+            } else {
+                (DocsStatus::Synced, "up to date".to_string())
+            };
+
+            CrateStatus {
+                crate_name,
+                lock_version: Some(lock_version),
+                docs_version: Some(docs_version),
+                status,
+                reason,
+            }
+        })
+        .collect()
+}
+
+fn discover_existing_version(output_dir: &Path, crate_name: &str) -> Option<String> {
+    let mut versions = Vec::new();
+    let prefix = format!("{crate_name}@");
+
+    let Ok(entries) = std::fs::read_dir(output_dir) else {
+        return None;
+    };
+
+    for entry in entries.flatten() {
+        if !entry.path().is_dir() {
+            continue;
+        }
+
+        let dir_name = entry.file_name();
+        let dir_name = dir_name.to_string_lossy();
+        if let Some(version) = dir_name.strip_prefix(&prefix) {
+            versions.push(version.to_string());
+        }
     }
 
-    statuses.sort_by(|a, b| a.name.cmp(&b.name));
-    statuses
+    versions.sort();
+    versions.pop()
 }
 
 pub fn print_status_table(statuses: &[CrateStatus]) {
@@ -102,27 +179,33 @@ pub fn print_status_table(statuses: &[CrateStatus]) {
 fn format_status_table(statuses: &[CrateStatus]) -> String {
     const COL_CRATE: usize = 24;
     const COL_LOCK: usize = 16;
+    const COL_DOCS: usize = 16;
     const COL_STATUS: usize = 14;
 
     let mut output = String::new();
     let _ = writeln!(
         output,
-        "{:<COL_CRATE$} {:<COL_LOCK$} {:<COL_STATUS$}",
-        "Crate", "Lock Version", "Docs Status"
+        "{:<COL_CRATE$} {:<COL_LOCK$} {:<COL_DOCS$} {:<COL_STATUS$}",
+        "Crate", "Lock Version", "Docs Version", "Status"
     );
     let _ = writeln!(
         output,
-        "{:-<COL_CRATE$} {:-<COL_LOCK$} {:-<COL_STATUS$}",
-        "", "", ""
+        "{:-<COL_CRATE$} {:-<COL_LOCK$} {:-<COL_DOCS$} {:-<COL_STATUS$}",
+        "", "", "", ""
     );
 
     for item in statuses {
         let lock = item.lock_version.as_deref().unwrap_or("-");
+        let docs = item.docs_version.as_deref().unwrap_or("-");
         let _ = writeln!(
             output,
-            "{:<COL_CRATE$} {:<COL_LOCK$} {:<COL_STATUS$}",
-            item.name, lock, item.status
+            "{:<COL_CRATE$} {:<COL_LOCK$} {:<COL_DOCS$} {:<COL_STATUS$}",
+            item.crate_name,
+            lock,
+            docs,
+            item.status.as_str(),
         );
+        let _ = writeln!(output, "  ↳ {}", item.reason);
     }
 
     let summary = summarize(statuses);
@@ -134,7 +217,25 @@ fn format_status_table(statuses: &[CrateStatus]) -> String {
     );
 
     if summary.has_problems() {
-        let _ = writeln!(output, "Hint: cargo ai-docs sync --force");
+        let _ = writeln!(
+            output,
+            "Hint: run `cargo ai-fdocs sync` (or `--force` for full refresh)"
+        );
+        let _ = writeln!(
+            output,
+            "CI hint: run `cargo ai-fdocs check` to fail on stale docs"
+        );
+
+        let _ = writeln!(output, "\nProblem details:");
+        for item in statuses.iter().filter(|s| s.status.is_problem()) {
+            let _ = writeln!(
+                output,
+                "- {} [{}]: {}",
+                item.crate_name,
+                item.status.as_str(),
+                item.reason
+            );
+        }
     }
 
     output
@@ -173,113 +274,6 @@ fn summarize(statuses: &[CrateStatus]) -> StatusSummary {
     summary
 }
 
-            let meta_path = expected_dir.join(".aifd-meta.toml");
-            let Ok(meta_raw) = std::fs::read_to_string(&meta_path) else {
-                return CrateStatus {
-                    crate_name,
-                    lock_version: Some(lock_version.clone()),
-                    docs_version: Some(lock_version),
-                    status: DocsStatus::Corrupted,
-                };
-            };
-
-            let Ok(meta) = toml::from_str::<MetaFile>(&meta_raw) else {
-                return CrateStatus {
-                    crate_name,
-                    lock_version: Some(lock_version.clone()),
-                    docs_version: Some(lock_version),
-                    status: DocsStatus::Corrupted,
-                };
-            };
-
-            let docs_version = meta
-                .version
-                .or(meta.lock_version)
-                .unwrap_or(lock_version.clone());
-            let status = if docs_version != lock_version {
-                DocsStatus::Outdated
-            } else if meta.is_fallback.or(meta.fallback).unwrap_or(false) {
-                DocsStatus::SyncedFallback
-            } else {
-                DocsStatus::Synced
-            };
-
-            CrateStatus {
-                crate_name,
-                lock_version: Some(lock_version),
-                docs_version: Some(docs_version),
-                status,
-            }
-        })
-        .collect()
-}
-
-fn discover_existing_version(output_dir: &Path, crate_name: &str) -> Option<String> {
-    let mut versions = Vec::new();
-    let prefix = format!("{crate_name}@");
-
-    let Ok(entries) = std::fs::read_dir(output_dir) else {
-        return None;
-    };
-
-    for entry in entries.flatten() {
-        if !entry.path().is_dir() {
-            continue;
-        }
-
-        let dir_name = entry.file_name();
-        let dir_name = dir_name.to_string_lossy();
-        if let Some(version) = dir_name.strip_prefix(&prefix) {
-            versions.push(version.to_string());
-        }
-    }
-
-    versions.sort();
-    versions.pop()
-}
-
-pub fn print_status_table(statuses: &[CrateStatus]) {
-    let crate_col = statuses
-        .iter()
-        .map(|status| status.crate_name.len())
-        .max()
-        .unwrap_or(5)
-        .max("crate".len());
-
-    let lock_col = statuses
-        .iter()
-        .filter_map(|status| status.lock_version.as_ref().map(String::len))
-        .max()
-        .unwrap_or(4)
-        .max("lock".len());
-
-    let docs_col = statuses
-        .iter()
-        .filter_map(|status| status.docs_version.as_ref().map(String::len))
-        .max()
-        .unwrap_or(4)
-        .max("docs".len());
-
-    println!(
-        "{:<crate_col$}  {:<lock_col$}  {:<docs_col$}  status",
-        "crate", "lock", "docs"
-    );
-    println!(
-        "{:-<crate_col$}  {:-<lock_col$}  {:-<docs_col$}  {:-<6}",
-        "", "", "", ""
-    );
-
-    for status in statuses {
-        println!(
-            "{:<crate_col$}  {:<lock_col$}  {:<docs_col$}  {}",
-            status.crate_name,
-            status.lock_version.as_deref().unwrap_or("-"),
-            status.docs_version.as_deref().unwrap_or("-"),
-            status.status.as_str(),
-        );
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::{format_status_table, CrateStatus, DocsStatus};
@@ -290,25 +284,29 @@ mod tests {
 
         assert!(table.contains("Crate"));
         assert!(table.contains("Lock Version"));
-        assert!(table.contains("Docs Status"));
+        assert!(table.contains("Docs Version"));
+        assert!(table.contains("Status"));
         assert!(table.contains("Total: 0 | Synced: 0 | Missing: 0 | Outdated: 0 | Corrupted: 0"));
-        assert!(!table.contains("Hint: cargo ai-docs sync --force"));
+        assert!(!table.contains("Hint: run `cargo ai-fdocs sync`"));
     }
 
     #[test]
-    fn formats_missing_lock_version_and_shows_hint_for_problems() {
+    fn formats_missing_lock_version_and_shows_hints_and_problem_details() {
         let statuses = vec![CrateStatus {
-            name: "serde".to_string(),
+            crate_name: "serde".to_string(),
             lock_version: None,
+            docs_version: None,
             status: DocsStatus::Missing,
+            reason: "crate missing in Cargo.lock".to_string(),
         }];
 
         let table = format_status_table(&statuses);
 
         assert!(table.contains("serde"));
-        assert!(table.contains("-"));
         assert!(table.contains("Missing"));
-        assert!(table.contains("Total: 1 | Synced: 0 | Missing: 1 | Outdated: 0 | Corrupted: 0"));
-        assert!(table.contains("Hint: cargo ai-docs sync --force"));
+        assert!(table.contains("crate missing in Cargo.lock"));
+        assert!(table.contains("Hint: run `cargo ai-fdocs sync`"));
+        assert!(table.contains("CI hint: run `cargo ai-fdocs check`"));
+        assert!(table.contains("Problem details:"));
     }
 }

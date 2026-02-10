@@ -27,11 +27,12 @@ Implemented now:
 - parse project config (`ai-fdocs.toml`);
 - resolve crate versions from `Cargo.lock`;
 - fetch docs from GitHub (including custom file lists);
-- cache per crate/version with metadata;
+- cache per crate/version with metadata and config fingerprint invalidation;
 - prune outdated crate folders;
 - generate global index (`_INDEX.md`);
 - show status of synced docs;
 - continue sync when one crate/file fails (best-effort), reporting errors in итоговой статистике.
+- run crate sync in parallel for faster lockfile processing.
 
 Current commands:
 
@@ -39,6 +40,8 @@ Current commands:
 cargo ai-fdocs sync
 cargo ai-fdocs sync --force
 cargo ai-fdocs status
+cargo ai-fdocs check
+cargo ai-fdocs init
 ```
 
 > Note: the package name is `cargo-ai-fdocs`, while the current alpha command
@@ -59,13 +62,14 @@ cargo install cargo-ai-fdocs
 output_dir = "docs/ai/vendor-docs/rust"
 max_file_size_kb = 200
 prune = true
+sync_concurrency = 8
 
 [crates.axum]
-sources = [{ type = "github", repo = "tokio-rs/axum" }]
+repo = "tokio-rs/axum"
 ai_notes = "Prefer extractor-based handlers and Router-first composition."
 
 [crates.sqlx]
-sources = [{ type = "github", repo = "launchbadge/sqlx" }]
+repo = "launchbadge/sqlx"
 files = ["README.md", "CHANGELOG.md", "docs/migration-guide.md"]
 ai_notes = "Prefer compile-time checked queries with sqlx::query!"
 ```
@@ -83,10 +87,12 @@ docs/ai/vendor-docs/rust/
 ├── _INDEX.md
 ├── axum@<version>/
 │   ├── .aifd-meta.toml
+│   ├── _SUMMARY.md
 │   ├── README.md
 │   └── CHANGELOG.md
 └── sqlx@<version>/
     ├── .aifd-meta.toml
+    ├── _SUMMARY.md
     ├── README.md
     └── docs__migration-guide.md
 ```
@@ -108,13 +114,21 @@ docs/ai/vendor-docs/rust/
   - `output_dir` (default: `docs/ai/vendor-docs/rust`)
   - `max_file_size_kb` (default: `200`)
   - `prune` (default: `true`)
+  - `sync_concurrency` (default: `8`)
 
 - `[crates.<name>]`
-  - `sources` (required in current alpha format)
+  - `repo` (recommended, `owner/repo`)
+  - `subpath` (optional monorepo prefix for default files)
   - `files` (optional explicit file list)
   - `ai_notes` (optional hints included in index)
 
+Legacy `sources = [{ type = "github", repo = "..." }]` is still accepted for
+backward compatibility, but new configs should use `repo`.
+
 ## Practical AI integration
+
+In CI (`cargo ai-fdocs check`), failures include per-crate reasons; in GitHub Actions they are additionally emitted as `::error` annotations.
+
 
 For Cursor-like tools, point instructions to:
 - `docs/ai/vendor-docs/rust/_INDEX.md` first,
@@ -125,8 +139,7 @@ with your project’s real dependency graph.
 
 ## Roadmap (high level)
 
-Planned next steps include `init`, `check`, and parallel fetching, but these are
-not part of the currently released alpha behavior in this branch.
+Planned next steps include richer status/check UX and further CI-oriented diagnostics.
 
 ## License
 
