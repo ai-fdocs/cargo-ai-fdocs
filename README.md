@@ -1,4 +1,4 @@
-**Version-locked documentation for AI coding assistants.**
+Version-locked documentation for AI coding assistants.
 
 Sync README, CHANGELOG, and guides from your Rust dependencies — pinned to the
 exact versions in your `Cargo.lock` — so that Cursor, Copilot, Windsurf, and
