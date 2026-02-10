@@ -9,7 +9,7 @@ mod resolver;
 mod status;
 mod storage;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use tokio::sync::Semaphore;
@@ -118,7 +118,7 @@ async fn run(cli: Cli) -> Result<()> {
     }
 }
 
-async fn run_sync(config_path: &PathBuf, force: bool) -> Result<()> {
+async fn run_sync(config_path: &Path, force: bool) -> Result<()> {
     let config = Config::load(config_path)?;
     info!("Loaded config from {}", config_path.display());
 
@@ -268,15 +268,19 @@ async fn sync_one_crate(
         return SyncOutcome::Error;
     }
 
+    let save_ctx = storage::SaveContext {
+        repo: &repo,
+        resolved: &resolved,
+        max_file_size_kb,
+    };
+
     match storage::save_crate_files(
         &rust_output_dir,
         &crate_name,
         &version,
-        &repo,
-        &resolved,
+        &save_ctx,
         &fetched_files,
         &crate_doc,
-        max_file_size_kb,
     ) {
         Ok(saved) => SyncOutcome::Synced(saved),
         Err(e) => {
@@ -354,7 +358,7 @@ fn emit_check_failures_for_ci(statuses: &[crate::status::CrateStatus]) {
     }
 }
 
-fn run_status(config_path: &PathBuf) -> Result<()> {
+fn run_status(config_path: &Path) -> Result<()> {
     let config = Config::load(config_path)?;
     let rust_versions = resolver::resolve_cargo_versions(PathBuf::from("Cargo.lock").as_path())?;
 
@@ -365,7 +369,7 @@ fn run_status(config_path: &PathBuf) -> Result<()> {
     Ok(())
 }
 
-fn run_check(config_path: &PathBuf) -> Result<()> {
+fn run_check(config_path: &Path) -> Result<()> {
     let config = Config::load(config_path)?;
     let rust_versions = resolver::resolve_cargo_versions(PathBuf::from("Cargo.lock").as_path())?;
     let rust_dir = storage::rust_output_dir(&config.settings.output_dir);

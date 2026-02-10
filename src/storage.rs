@@ -163,11 +163,9 @@ pub fn save_crate_files(
     output_dir: &Path,
     crate_name: &str,
     version: &str,
-    repo: &str,
-    resolved: &ResolvedRef,
+    save_ctx: &SaveContext<'_>,
     fetched_files: &[FetchedFile],
     crate_config: &CrateDoc,
-    max_file_size_kb: usize,
 ) -> Result<SavedCrate> {
     let crate_dir = output_dir.join(format!("{crate_name}@{version}"));
 
@@ -186,15 +184,15 @@ pub fn save_crate_files(
             content = changelog::truncate_changelog(&content, version);
         }
 
-        content = truncate_if_needed(&content, max_file_size_kb);
+        content = truncate_if_needed(&content, save_ctx.max_file_size_kb);
 
         if should_inject_header(&file.path) {
             content = inject_header(
                 &content,
-                repo,
-                &resolved.git_ref,
+                save_ctx.repo,
+                &save_ctx.resolved.git_ref,
                 &file.path,
-                resolved.is_fallback,
+                save_ctx.resolved.is_fallback,
                 version,
                 &file.source_url,
             );
@@ -208,9 +206,9 @@ pub fn save_crate_files(
 
     let meta = CrateMeta {
         version: version.to_string(),
-        git_ref: resolved.git_ref.clone(),
+        git_ref: save_ctx.resolved.git_ref.clone(),
         fetched_at: Utc::now().format("%Y-%m-%d").to_string(),
-        is_fallback: resolved.is_fallback,
+        is_fallback: save_ctx.resolved.is_fallback,
         config_fingerprint: Some(crate_config_fingerprint(crate_config)),
     };
 
@@ -229,8 +227,8 @@ pub fn save_crate_files(
     let saved = SavedCrate {
         name: crate_name.to_string(),
         version: version.to_string(),
-        git_ref: resolved.git_ref.clone(),
-        is_fallback: resolved.is_fallback,
+        git_ref: save_ctx.resolved.git_ref.clone(),
+        is_fallback: save_ctx.resolved.is_fallback,
         files: saved_names,
         ai_notes: crate_config.ai_notes.clone(),
     };
@@ -238,6 +236,12 @@ pub fn save_crate_files(
     fs::write(crate_dir.join("_SUMMARY.md"), render_crate_summary(&saved))?;
 
     Ok(saved)
+}
+
+pub struct SaveContext<'a> {
+    pub repo: &'a str,
+    pub resolved: &'a ResolvedRef,
+    pub max_file_size_kb: usize,
 }
 
 pub fn read_cached_info(
