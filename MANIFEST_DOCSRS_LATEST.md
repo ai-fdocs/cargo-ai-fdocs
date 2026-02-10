@@ -201,6 +201,18 @@ docs/fdocs/
 
 ---
 
+## 4.1) Virtual acceptance walkthrough (nothing missed)
+
+- [x] Проверяем режим и валидацию конфига до сети.
+- [x] Разделяем ответственность источников: crates.io (version), docs.rs (content), GitHub (fallback).
+- [x] Фиксируем TTL/refresh/fallback поведение в явном контракте.
+- [x] Фиксируем mode-aware `status/check` без ложных `Outdated`.
+- [x] Фиксируем обязательные unit/integration/regression тесты.
+- [x] Добавляем reason-code матрицу для CI и дебага.
+- [x] Добавляем reliability checklist (atomic write, retries, deterministic outputs).
+
+---
+
 ## 5) Журнал выполнения
 
 - [x] Создан отдельный манифест интеграции latest-docs.

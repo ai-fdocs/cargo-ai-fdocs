@@ -200,3 +200,78 @@ docs/fdocs/
 - Full recursive mirror of entire rustdoc asset tree.
 - Private registry support.
 - Multi-language ecosystem support (outside Rust).
+
+
+---
+
+## 11) Virtual end-to-end walkthrough (A -> Z)
+
+This is a deterministic dry-run that must pass in implementation and tests.
+
+1. CLI starts `sync --mode latest-docs`.
+2. Config is validated:
+   - `sync_mode=latest_docs`
+   - crate entries exist
+   - source config is coherent.
+3. For each crate job (bounded concurrency):
+   - resolve upstream latest version via crates.io;
+   - validate returned version string.
+4. Read local meta/cache for `crate@latest`:
+   - if meta missing -> cache miss;
+   - if meta invalid schema -> corrupted -> force refresh;
+   - if TTL valid and same upstream version -> cache hit.
+5. If refresh needed:
+   - fetch docs page from docs.rs;
+   - parse/normalize to single-page artifact `API.md`;
+   - if docs.rs fails with fallback-eligible reason -> run GitHub fallback.
+6. Persist artifacts atomically:
+   - write temp dir;
+   - write docs files + `_SUMMARY.md` + `.aifd-meta.toml`;
+   - rename temp dir to final `crate@version`.
+7. Update global index (`_INDEX.md`) after all crate jobs.
+8. Emit sync summary with source counters:
+   - docsrs success
+   - github fallback
+   - cached
+   - failed.
+9. `status/check` mode-aware validation:
+   - latest_docs compares against crates.io latest,
+   - lockfile compares against Cargo.lock.
+10. CI consumes JSON report with explicit reason codes.
+
+---
+
+## 12) Reliability hardening checklist ("tank mode")
+
+Mandatory guards before enabling by default:
+
+- [ ] Atomic writes for crate directories (no partial final state).
+- [ ] Strict timeout budget per request and per crate job.
+- [ ] Retry with exponential backoff and capped attempts.
+- [ ] Circuit-breaker behavior for repeated upstream failures.
+- [ ] Idempotent reruns: same input -> same output tree.
+- [ ] Deterministic sorting in index and status outputs.
+- [ ] Structured reason codes for every non-success branch.
+- [ ] Schema-versioned meta with forward-compatibility checks.
+- [ ] Fallback provenance in both summary and meta.
+- [ ] Golden tests for parser normalization output.
+- [ ] Integration tests with mocked crates.io/docs.rs/GitHub outages.
+- [ ] Regression test suite for existing lockfile mode.
+
+---
+
+## 13) Reason code matrix (required for status/check JSON)
+
+- `latest_ok_docsrs`
+- `latest_ok_fallback`
+- `latest_cache_hit_ttl`
+- `latest_outdated_upstream_changed`
+- `latest_outdated_refresh_failed`
+- `latest_corrupted_meta`
+- `latest_missing_no_artifacts`
+- `lockfile_ok`
+- `lockfile_outdated_version_mismatch`
+- `lockfile_missing`
+- `lockfile_corrupted_meta`
+
+All non-success reason codes must map to actionable remediation text.
