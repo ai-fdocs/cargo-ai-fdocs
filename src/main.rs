@@ -71,6 +71,12 @@ async fn run() -> Result<()> {
                 "Config loaded. Processing {} crates...",
                 config.crates.len()
             );
+            info!(
+                "Settings: output_dir='{}', max_file_size_kb={}, prune={}",
+                config.settings.output_dir.display(),
+                config.settings.max_file_size_kb,
+                config.settings.prune
+            );
 
             let lock_path = PathBuf::from("Cargo.lock");
             let locked_versions = LockResolver::resolve(&lock_path)?;
@@ -86,6 +92,9 @@ async fn run() -> Result<()> {
 
             for (name, crate_cfg) in &config.crates {
                 info!("Processing crate: {name}");
+                if !crate_cfg.ai_notes.is_empty() {
+                    info!("  AI notes configured ({} chars)", crate_cfg.ai_notes.len());
+                }
 
                 let Some(version) = locked_versions.get(name) else {
                     warn!("Crate '{name}' not found in Cargo.lock. Skipping.");
@@ -100,18 +109,33 @@ async fn run() -> Result<()> {
                     info!("  Tag found: {}", resolved.git_ref);
                 }
 
-                let readme_path = if let Some(sub) = &crate_cfg.subpath {
-                    format!("{sub}/README.md")
+                if let Some(paths) = &crate_cfg.files {
+                    info!("  Explicit files configured: {}", paths.len());
+                    for path in paths {
+                        match fetcher
+                            .fetch_file(&crate_cfg.repo, &resolved.git_ref, path)
+                            .await?
+                        {
+                            Some(content) => {
+                                info!("  ✅ '{}' fetched ({} bytes)", path, content.len())
+                            }
+                            None => warn!("  ❌ '{}' not found", path),
+                        }
+                    }
                 } else {
-                    "README.md".to_string()
-                };
+                    let readme_path = if let Some(sub) = &crate_cfg.subpath {
+                        format!("{sub}/README.md")
+                    } else {
+                        "README.md".to_string()
+                    };
 
-                match fetcher
-                    .fetch_file(&crate_cfg.repo, &resolved.git_ref, &readme_path)
-                    .await?
-                {
-                    Some(content) => info!("  ✅ README.md fetched ({} bytes)", content.len()),
-                    None => warn!("  ❌ README.md not found at {readme_path}"),
+                    match fetcher
+                        .fetch_file(&crate_cfg.repo, &resolved.git_ref, &readme_path)
+                        .await?
+                    {
+                        Some(content) => info!("  ✅ README.md fetched ({} bytes)", content.len()),
+                        None => warn!("  ❌ README.md not found at {readme_path}"),
+                    }
                 }
             }
         }
