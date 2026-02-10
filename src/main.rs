@@ -3,6 +3,7 @@ mod error;
 #[path = "fetcher/mod.rs"]
 mod fetcher;
 mod index;
+mod init;
 mod processor;
 mod resolver;
 mod status;
@@ -16,6 +17,7 @@ use tracing::{error, info, warn};
 use crate::config::Config;
 use crate::error::Result;
 use crate::fetcher::github::{FileRequest, GitHubFetcher};
+use crate::init::run_init as run_init_command;
 use crate::status::{collect_status, print_status_table, DocsStatus};
 
 #[derive(Parser)]
@@ -49,6 +51,12 @@ enum Commands {
     Check {
         #[arg(short, long, default_value = "ai-fdocs.toml")]
         config: PathBuf,
+    },
+    Init {
+        #[arg(short, long, default_value = "ai-fdocs.toml")]
+        config: PathBuf,
+        #[arg(long, default_value_t = false)]
+        force: bool,
     },
 }
 
@@ -95,6 +103,7 @@ async fn run(cli: Cli) -> Result<()> {
         Commands::Sync { config, force } => run_sync(&config, force).await,
         Commands::Status { config } => run_status(&config),
         Commands::Check { config } => run_check(&config),
+        Commands::Init { config, force } => run_init_command(&config, force).await,
     }
 }
 

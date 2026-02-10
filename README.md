@@ -40,6 +40,7 @@ cargo ai-fdocs sync
 cargo ai-fdocs sync --force
 cargo ai-fdocs status
 cargo ai-fdocs check
+cargo ai-fdocs init
 ```
 
 > Note: the package name is `cargo-ai-fdocs`, while the current alpha command
@@ -130,7 +131,7 @@ with your project’s real dependency graph.
 
 ## Roadmap (high level)
 
-Planned next steps include `init` and parallel fetching.
+Planned next step is parallel fetching and richer status/check UX.
 
 ## License
 

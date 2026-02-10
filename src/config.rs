@@ -117,19 +117,9 @@ impl Config {
 
     fn validate(&self) -> Result<()> {
         for (crate_name, crate_cfg) in &self.crates {
-            if crate_cfg.sources.is_empty() {
+            if crate_cfg.github_repo().is_none() {
                 return Err(AiDocsError::InvalidConfig(format!(
-                    "crate '{crate_name}' must define at least one source"
-                )));
-            }
-
-            let has_github = crate_cfg
-                .sources
-                .iter()
-                .any(|source| source.source_type == SourceType::Github);
-            if !has_github {
-                return Err(AiDocsError::InvalidConfig(format!(
-                    "crate '{crate_name}' must define a source with type = 'github'"
+                    "crate '{crate_name}' must define `repo` or legacy `sources` with GitHub"
                 )));
             }
         }
@@ -147,16 +137,16 @@ mod tests {
     use super::Config;
 
     #[test]
-    fn readme_example_parses_with_config_load() {
+    fn example_config_parses_with_config_load() {
         let path = Path::new("examples/ai-docs.toml");
-        let config = Config::load(path).expect("README example must parse");
+        let config = Config::load(path).expect("example config must parse");
 
         assert!(config.crates.contains_key("serde"));
         assert!(config.crates.contains_key("sqlx"));
     }
 
     #[test]
-    fn config_without_sources_fails_validation() {
+    fn config_without_repo_or_sources_fails_validation() {
         let suffix = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("system time should be valid")
@@ -166,9 +156,11 @@ mod tests {
         fs::write(&path, "[crates.serde]\nai_notes = \"x\"\n")
             .expect("must write temporary config");
 
-        let err = Config::load(&path).expect_err("config without sources must fail");
+        let err = Config::load(&path).expect_err("config without repo/sources must fail");
         fs::remove_file(&path).expect("must cleanup temporary config");
 
-        assert!(err.to_string().contains("must define at least one source"));
+        assert!(err
+            .to_string()
+            .contains("must define `repo` or legacy `sources` with GitHub"));
     }
 }
