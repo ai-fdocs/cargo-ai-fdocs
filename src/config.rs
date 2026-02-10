@@ -24,6 +24,9 @@ pub struct Settings {
 
     #[serde(default = "default_true")]
     pub prune: bool,
+
+    #[serde(default = "default_sync_concurrency")]
+    pub sync_concurrency: usize,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -93,12 +96,17 @@ fn default_true() -> bool {
     true
 }
 
+fn default_sync_concurrency() -> usize {
+    8
+}
+
 impl Default for Settings {
     fn default() -> Self {
         Self {
             output_dir: default_output_dir(),
             max_file_size_kb: default_max_file_size_kb(),
             prune: default_true(),
+            sync_concurrency: default_sync_concurrency(),
         }
     }
 }
@@ -116,6 +124,12 @@ impl Config {
     }
 
     fn validate(&self) -> Result<()> {
+        if self.settings.sync_concurrency == 0 {
+            return Err(AiDocsError::InvalidConfig(
+                "settings.sync_concurrency must be greater than 0".to_string(),
+            ));
+        }
+
         for (crate_name, crate_cfg) in &self.crates {
             if crate_cfg.github_repo().is_none() {
                 return Err(AiDocsError::InvalidConfig(format!(
@@ -143,6 +157,34 @@ mod tests {
 
         assert!(config.crates.contains_key("serde"));
         assert!(config.crates.contains_key("sqlx"));
+    }
+
+    #[test]
+    fn config_with_zero_sync_concurrency_fails_validation() {
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time should be valid")
+            .as_nanos();
+        let path =
+            std::env::temp_dir().join(format!("ai-fdocs-invalid-sync-concurrency-{suffix}.toml"));
+
+        fs::write(
+            &path,
+            r#"[settings]
+sync_concurrency = 0
+
+[crates.serde]
+repo = "serde-rs/serde"
+"#,
+        )
+        .expect("must write temporary config");
+
+        let err = Config::load(&path).expect_err("zero sync_concurrency must fail");
+        fs::remove_file(&path).expect("must cleanup temporary config");
+
+        assert!(err
+            .to_string()
+            .contains("settings.sync_concurrency must be greater than 0"));
     }
 
     #[test]

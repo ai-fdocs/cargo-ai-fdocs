@@ -12,6 +12,8 @@ mod storage;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use tokio::sync::Semaphore;
+
 use clap::{Parser, Subcommand};
 use tracing::{error, info, warn};
 
@@ -138,14 +140,18 @@ async fn run_sync(config_path: &PathBuf, force: bool) -> Result<()> {
     }
 
     let max_file_size_kb = config.settings.max_file_size_kb;
+    let concurrency = config.settings.sync_concurrency;
+    let semaphore = Arc::new(Semaphore::new(concurrency));
     let mut join_set = tokio::task::JoinSet::new();
 
     for (crate_name, crate_doc) in jobs {
         let rust_output_dir = rust_output_dir.clone();
         let rust_versions = rust_versions.clone();
         let fetcher = Arc::clone(&fetcher);
+        let semaphore = Arc::clone(&semaphore);
 
         join_set.spawn(async move {
+            let _permit = semaphore.acquire_owned().await.expect("semaphore closed");
             sync_one_crate(
                 rust_output_dir,
                 rust_versions,

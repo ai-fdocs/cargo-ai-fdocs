@@ -62,6 +62,7 @@ cargo install cargo-ai-fdocs
 output_dir = "docs/ai/vendor-docs/rust"
 max_file_size_kb = 200
 prune = true
+sync_concurrency = 8
 
 [crates.axum]
 repo = "tokio-rs/axum"
@@ -113,6 +114,7 @@ docs/ai/vendor-docs/rust/
   - `output_dir` (default: `docs/ai/vendor-docs/rust`)
   - `max_file_size_kb` (default: `200`)
   - `prune` (default: `true`)
+  - `sync_concurrency` (default: `8`)
 
 - `[crates.<name>]`
   - `repo` (recommended, `owner/repo`)

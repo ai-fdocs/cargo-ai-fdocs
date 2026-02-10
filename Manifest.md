@@ -53,6 +53,7 @@ cargo ai-fdocs status
 output_dir = "docs/ai/vendor-docs/rust"
 max_file_size_kb = 200
 prune = true
+sync_concurrency = 8
 
 [crates.axum]
 repo = "tokio-rs/axum"
@@ -68,6 +69,7 @@ ai_notes = "Use sqlx::query! where possible"
 - `settings.output_dir` — куда сохранять docs.
 - `settings.max_file_size_kb` — лимит размера файла с обрезкой.
 - `settings.prune` — удалять устаревшие папки версий.
+- `settings.sync_concurrency` — количество параллельных sync-воркеров (по умолчанию `8`).
 - `crates.<name>.repo` — источник документации в формате `owner/repo`.
 - `crates.<name>.subpath` — опциональный префикс для monorepo (для дефолтных файлов).
 - `crates.<name>.files` — явный список файлов (если не указан, используются дефолтные).
