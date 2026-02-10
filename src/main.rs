@@ -105,7 +105,18 @@ async fn run() -> Result<()> {
                 };
                 info!("  Locked version: {version}");
 
-                let resolved = fetcher.resolve_ref(&crate_cfg.repo, name, version).await?;
+                let Some(github_source) = crate_cfg
+                    .sources
+                    .iter()
+                    .find(|source| source.source_type == "github")
+                else {
+                    warn!("  ❌ no source with type='github' configured. Skipping.");
+                    continue;
+                };
+
+                let resolved = fetcher
+                    .resolve_ref(&github_source.repo, name, version)
+                    .await?;
                 if resolved.is_fallback {
                     warn!("  ⚠ Fallback to branch: {}", resolved.git_ref);
                 } else {
@@ -116,7 +127,7 @@ async fn run() -> Result<()> {
                     info!("  Explicit files configured: {}", paths.len());
                     for path in paths {
                         match fetcher
-                            .fetch_file(&crate_cfg.repo, &resolved.git_ref, path)
+                            .fetch_file(&github_source.repo, &resolved.git_ref, path)
                             .await?
                         {
                             Some(content) => {
@@ -126,14 +137,10 @@ async fn run() -> Result<()> {
                         }
                     }
                 } else {
-                    let readme_path = if let Some(sub) = &crate_cfg.subpath {
-                        format!("{sub}/README.md")
-                    } else {
-                        "README.md".to_string()
-                    };
+                    let readme_path = "README.md".to_string();
 
                     match fetcher
-                        .fetch_file(&crate_cfg.repo, &resolved.git_ref, &readme_path)
+                        .fetch_file(&github_source.repo, &resolved.git_ref, &readme_path)
                         .await?
                     {
                         Some(content) => info!("  ✅ README.md fetched ({} bytes)", content.len()),
@@ -165,10 +172,10 @@ fn print_config_example() {
     eprintln!();
     eprintln!("Example:");
     eprintln!("[crates.axum]");
-    eprintln!("repo = \"tokio-rs/axum\"");
+    eprintln!("sources = [{{ type = \"github\", repo = \"tokio-rs/axum\" }}]");
     eprintln!();
     eprintln!("[crates.serde]");
-    eprintln!("repo = \"serde-rs/serde\"");
+    eprintln!("sources = [{{ type = \"github\", repo = \"serde-rs/serde\" }}]");
     eprintln!("ai_notes = \"Use derive macros for serialization.\"");
 }
 

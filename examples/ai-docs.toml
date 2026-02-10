@@ -1,0 +1,13 @@
+[settings]
+output_dir = "docs/ai/vendor-docs/rust"
+max_file_size_kb = 200
+prune = true
+
+[crates.serde]
+sources = [{ type = "github", repo = "serde-rs/serde" }]
+ai_notes = "Use #[derive(Serialize, Deserialize)] for DTOs."
+
+[crates.sqlx]
+sources = [{ type = "github", repo = "launchbadge/sqlx" }]
+files = ["README.md", "CHANGELOG.md", "docs/migration-guide.md"]
+ai_notes = "Use compile-time checked queries with sqlx::query! macro."

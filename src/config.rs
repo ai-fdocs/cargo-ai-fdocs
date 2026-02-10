@@ -28,20 +28,23 @@ pub struct Settings {
 
 #[derive(Debug, Deserialize)]
 pub struct CrateConfig {
-    /// GitHub repository "owner/repo"
-    pub repo: String,
-
-    /// Optional: Subfolder for monorepos (e.g. "axum-core")
-    /// Affects default file search path.
-    pub subpath: Option<String>,
+    /// Source definitions (at least one is required).
+    pub sources: Vec<CrateSource>,
 
     /// Optional: Explicit list of files to fetch.
-    /// Paths are relative to repo root (ignoring subpath).
+    /// Paths are relative to repo root.
     pub files: Option<Vec<String>>,
 
     /// Instructions for AI (goes into _INDEX.md)
     #[serde(default)]
     pub ai_notes: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CrateSource {
+    #[serde(rename = "type")]
+    pub source_type: String,
+    pub repo: String,
 }
 
 fn default_output_dir() -> PathBuf {
@@ -74,5 +77,21 @@ impl Config {
         let content = std::fs::read_to_string(path)?;
         let config: Config = toml::from_str(&content)?;
         Ok(config)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::Config;
+
+    #[test]
+    fn readme_example_parses_with_config_load() {
+        let path = Path::new("examples/ai-docs.toml");
+        let config = Config::load(path).expect("README example must parse");
+
+        assert!(config.crates.contains_key("serde"));
+        assert!(config.crates.contains_key("sqlx"));
     }
 }
