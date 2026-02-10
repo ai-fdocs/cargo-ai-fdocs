@@ -88,15 +88,15 @@ fn default_output_dir() -> PathBuf {
     PathBuf::from("docs/ai/vendor-docs")
 }
 
-fn default_max_file_size_kb() -> usize {
+const fn default_max_file_size_kb() -> usize {
     200
 }
 
-fn default_true() -> bool {
+const fn default_true() -> bool {
     true
 }
 
-fn default_sync_concurrency() -> usize {
+const fn default_sync_concurrency() -> usize {
     8
 }
 
@@ -118,7 +118,7 @@ impl Config {
         }
 
         let content = std::fs::read_to_string(path)?;
-        let config: Config = toml::from_str(&content)?;
+        let config: Self = toml::from_str(&content)?;
         config.validate()?;
         Ok(config)
     }

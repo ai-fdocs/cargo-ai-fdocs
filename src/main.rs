@@ -298,16 +298,16 @@ async fn sync_one_crate(
         .fetch_files(&repo, &resolved.git_ref, &requests)
         .await;
 
-    let fetched = collect_fetched_files(results, &crate_name, &version);
-    if fetched.non_optional_errors > 0 && !fetched.files.is_empty() {
+    let fetched_files = collect_fetched_files(results, &crate_name, &version);
+    if fetched_files.non_optional_errors > 0 && !fetched_files.files.is_empty() {
         warn!(
             "  ⚠ partial fetch for {crate_name}@{version}: {} file error(s), continuing with {} fetched file(s)",
-            fetched.non_optional_errors,
-            fetched.files.len()
+            fetched_files.non_optional_errors,
+            fetched_files.files.len()
         );
     }
 
-    if fetched.files.is_empty() {
+    if fetched_files.files.is_empty() {
         warn!("  ✗ no files fetched for {crate_name}@{version}");
         return SyncOutcome::Error(SyncErrorKind::NotFound);
     }
@@ -321,7 +321,7 @@ async fn sync_one_crate(
     let save_req = storage::SaveRequest {
         crate_name: &crate_name,
         version: &version,
-        fetched_files: &fetched.files,
+        fetched_files: &fetched_files.files,
         crate_config: &crate_doc,
     };
 
@@ -406,15 +406,14 @@ fn build_requests(subpath: Option<&str>, explicit_files: Option<Vec<String>>) ->
     ]
 }
 
-fn should_emit_plain_check_errors(format: OutputFormat, github_actions: bool) -> bool {
+const fn should_emit_plain_check_errors(format: OutputFormat, github_actions: bool) -> bool {
     !github_actions && matches!(format, OutputFormat::Table)
 }
 
 fn emit_check_failures_for_ci(format: OutputFormat, statuses: &[crate::status::CrateStatus]) {
     let github_actions = std::env::var("GITHUB_ACTIONS")
         .ok()
-        .map(|v| v == "true")
-        .unwrap_or(false);
+        .is_some_and(|v| v == "true");
 
     for status in statuses
         .iter()
