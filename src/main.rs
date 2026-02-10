@@ -13,6 +13,7 @@ use crate::config::Config;
 use crate::error::Result;
 use crate::fetcher::GitHubFetcher;
 use crate::resolver::LockResolver;
+use crate::status::{collect_status_rows, print_status_table};
 
 #[derive(Parser)]
 #[command(name = "cargo-ai-fdocs")]
@@ -35,6 +36,7 @@ enum Commands {
         force: bool,
     },
     Status,
+    Check,
 }
 
 #[tokio::main]
@@ -176,4 +178,129 @@ fn print_config_example() {
     eprintln!("[crates.serde]");
     eprintln!("repo = \"serde-rs/serde\"");
     eprintln!("ai_notes = \"Use derive macros for serialization.\"");
+}
+
+mod status {
+    use crate::error::Result;
+
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub enum State {
+        Synced,
+        SyncedFallback,
+        Missing,
+        Outdated,
+        Corrupted,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub struct Entry {
+        pub crate_name: String,
+        pub state: State,
+    }
+
+    pub fn collect_status() -> Result<Vec<Entry>> {
+        Ok(Vec::new())
+    }
+
+    pub fn is_healthy(statuses: &[Entry]) -> bool {
+        statuses
+            .iter()
+            .all(|entry| matches!(entry.state, State::Synced | State::SyncedFallback))
+    }
+
+    pub fn print_status(statuses: &[Entry]) {
+        if statuses.is_empty() {
+            println!("No crates to inspect. Run `cargo ai-fdocs sync` first.");
+            return;
+        }
+
+        for entry in statuses {
+            println!("{}: {}", entry.crate_name, state_label(&entry.state));
+        }
+    }
+
+    pub fn print_check(statuses: &[Entry]) {
+        let unhealthy: Vec<&Entry> = statuses
+            .iter()
+            .filter(|entry| {
+                matches!(
+                    entry.state,
+                    State::Missing | State::Outdated | State::Corrupted
+                )
+            })
+            .collect();
+
+        if unhealthy.is_empty() {
+            println!("ok ({} crates)", statuses.len());
+            return;
+        }
+
+        let names = unhealthy
+            .iter()
+            .map(|entry| entry.crate_name.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        println!("stale: {} crate(s): {}", unhealthy.len(), names);
+    }
+
+    fn state_label(state: &State) -> &'static str {
+        match state {
+            State::Synced => "synced",
+            State::SyncedFallback => "synced_fallback",
+            State::Missing => "missing",
+            State::Outdated => "outdated",
+            State::Corrupted => "corrupted",
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::{is_healthy, Entry, State};
+
+        #[test]
+        fn healthy_when_only_synced_or_fallback() {
+            let statuses = vec![
+                Entry {
+                    crate_name: "axum".to_string(),
+                    state: State::Synced,
+                },
+                Entry {
+                    crate_name: "serde".to_string(),
+                    state: State::SyncedFallback,
+                },
+            ];
+
+            assert!(is_healthy(&statuses));
+        }
+
+        #[test]
+        fn unhealthy_when_missing_present() {
+            let statuses = vec![Entry {
+                crate_name: "axum".to_string(),
+                state: State::Missing,
+            }];
+
+            assert!(!is_healthy(&statuses));
+        }
+
+        #[test]
+        fn unhealthy_when_outdated_present() {
+            let statuses = vec![Entry {
+                crate_name: "axum".to_string(),
+                state: State::Outdated,
+            }];
+
+            assert!(!is_healthy(&statuses));
+        }
+
+        #[test]
+        fn unhealthy_when_corrupted_present() {
+            let statuses = vec![Entry {
+                crate_name: "axum".to_string(),
+                state: State::Corrupted,
+            }];
+
+            assert!(!is_healthy(&statuses));
+        }
+    }
 }
