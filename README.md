@@ -201,6 +201,11 @@ with your project’s real dependency graph.
 - Complete cross-platform smoke checks (Linux/macOS/Windows).
 - Publish a compatibility/support policy and semantic-versioning guarantees.
 
+### 5) Tooling technical debt (next refactor candidate)
+- `cargo clippy` still reports a `too_many_arguments` warning for
+  `storage::save_crate_files`; this is non-blocking for release but a good
+  near-term refactor target.
+
 ## License
 
 MIT
