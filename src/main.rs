@@ -321,7 +321,7 @@ async fn sync_one_crate(
     let save_req = storage::SaveRequest {
         crate_name: &crate_name,
         version: &version,
-        fetched_files: &fetched_files,
+        fetched_files: &fetched.files,
         crate_config: &crate_doc,
     };
 
