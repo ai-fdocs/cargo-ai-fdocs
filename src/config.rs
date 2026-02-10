@@ -28,13 +28,21 @@ pub struct Settings {
 
 #[derive(Debug, Deserialize)]
 pub struct CrateDoc {
-    pub sources: Vec<Source>,
+    /// New format: explicit repository in crate section.
+    pub repo: Option<String>,
+    /// Optional subpath for monorepos (used for defaults only).
+    pub subpath: Option<String>,
+    /// Optional explicit file list.
+    pub files: Option<Vec<String>>,
+
+    /// Legacy format compatibility.
+    pub sources: Option<Vec<Source>>,
 
     #[serde(default)]
     pub ai_notes: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum Source {
     GitHub {
@@ -45,17 +53,32 @@ pub enum Source {
     DocsRs,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct CrateSource {
-    #[serde(rename = "type")]
-    pub source_type: SourceType,
-    pub repo: String,
-}
+impl CrateDoc {
+    pub fn github_repo(&self) -> Option<&str> {
+        if let Some(repo) = self.repo.as_deref() {
+            return Some(repo);
+        }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum SourceType {
-    Github,
+        self.sources.as_ref().and_then(|sources| {
+            sources.iter().find_map(|s| match s {
+                Source::GitHub { repo, .. } => Some(repo.as_str()),
+                Source::DocsRs => None,
+            })
+        })
+    }
+
+    pub fn effective_files(&self) -> Option<Vec<String>> {
+        if let Some(files) = &self.files {
+            return Some(files.clone());
+        }
+
+        self.sources.as_ref().and_then(|sources| {
+            sources.iter().find_map(|s| match s {
+                Source::GitHub { files, .. } if !files.is_empty() => Some(files.clone()),
+                _ => None,
+            })
+        })
+    }
 }
 
 fn default_output_dir() -> PathBuf {

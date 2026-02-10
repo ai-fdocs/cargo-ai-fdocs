@@ -13,9 +13,9 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 use tracing::{error, info, warn};
 
-use crate::config::{Config, Source};
+use crate::config::Config;
 use crate::error::Result;
-use crate::fetcher::github::GitHubFetcher;
+use crate::fetcher::github::{FileRequest, GitHubFetcher};
 use crate::status::{collect_status, print_status_table, DocsStatus};
 
 #[derive(Parser)]
@@ -39,19 +39,17 @@ struct Cli {
 enum Commands {
     /// Download/update vendor documentation
     Sync {
-        #[arg(short, long, default_value = "ai-docs.toml")]
+        #[arg(short, long, default_value = "ai-fdocs.toml")]
         config: PathBuf,
         #[arg(long, default_value_t = false)]
         force: bool,
     },
-    /// Show which docs are outdated vs lock file
     Status {
-        #[arg(short, long, default_value = "ai-docs.toml")]
+        #[arg(short, long, default_value = "ai-fdocs.toml")]
         config: PathBuf,
     },
-    /// Exit with 1 if docs are missing/outdated/corrupted
     Check {
-        #[arg(short, long, default_value = "ai-docs.toml")]
+        #[arg(short, long, default_value = "ai-fdocs.toml")]
         config: PathBuf,
     },
 }
@@ -125,6 +123,12 @@ async fn run_sync(config_path: &PathBuf, force: bool) -> Result<()> {
             continue;
         };
 
+        let Some(repo) = crate_doc.github_repo() else {
+            warn!("Crate '{crate_name}' has no GitHub repo in config, skipping");
+            stats.skipped += 1;
+            continue;
+        };
+
         if !force && storage::is_cached(&rust_output_dir, crate_name, &version) {
             info!("  ⏭ {crate_name}@{version}: cached, skipping");
             if let Some(saved) =
@@ -138,75 +142,62 @@ async fn run_sync(config_path: &PathBuf, force: bool) -> Result<()> {
 
         info!("Syncing {crate_name}@{version}...");
 
-                let Some(version) = locked_versions.get(name) else {
-                    warn!("Crate '{name}' not found in Cargo.lock. Skipping.");
-                    continue;
-                };
-                info!("  Locked version: {version}");
-
-                let Some(github_source) = crate_cfg
-                    .sources
-                    .iter()
-                    .find(|source| source.source_type == SourceType::Github)
-                else {
-                    warn!("  ❌ no source with type='github' configured. Skipping.");
-                    continue;
-                };
-
-                let resolved = fetcher
-                    .resolve_ref(&github_source.repo, name, version)
-                    .await?;
-                if resolved.is_fallback {
-                    warn!("  ⚠ Fallback to branch: {}", resolved.git_ref);
-                } else {
-                    info!("  Tag found: {}", resolved.git_ref);
-                }
-
-        for source in &crate_doc.sources {
-            match source {
-                Source::GitHub { repo, files } => {
-                    let resolved = match fetcher.resolve_ref(repo, version.as_str()).await {
-                        Ok(r) => r,
-                        Err(e) => {
-                            warn!("  ✗ failed to resolve ref: {e}");
-                            stats.errors += 1;
-                            continue;
-                        }
-                    }
-                } else {
-                    match fetcher
-                        .fetch_file(&github_source.repo, &resolved.git_ref, "README.md")
-                        .await?
-                    {
-                        Some(content) => info!("  ✅ README.md fetched ({} bytes)", content.len()),
-                        None => warn!("  ❌ README.md not found at README.md"),
-                    }
-
-                    let saved = storage::save_crate_files(
-                        &rust_output_dir,
-                        crate_name,
-                        &version,
-                        repo,
-                        &resolved,
-                        &fetched_files,
-                        crate_doc,
-                        config.settings.max_file_size_kb,
-                    )?;
-                    crate_saved = Some(saved);
-                    break;
-                }
-                Source::DocsRs => {
-                    info!("  ⏭ docs.rs source skipped (not implemented in MVP)");
-                }
+        let resolved = match fetcher
+            .resolve_ref(repo, crate_name, version.as_str())
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                warn!("  ✗ failed to resolve ref: {e}");
+                stats.errors += 1;
+                continue;
             }
+        };
+
+        if resolved.is_fallback {
+            warn!(
+                "  ⚠ no exact tag for {crate_name}@{version}, using {}",
+                resolved.git_ref
+            );
         }
 
-        if let Some(saved) = crate_saved {
-            saved_crates.push(saved);
-            stats.synced += 1;
-        } else {
-            stats.skipped += 1;
+        let requests = build_requests(crate_doc.subpath.as_deref(), crate_doc.effective_files());
+        let results = fetcher
+            .fetch_files(repo, &resolved.git_ref, &requests)
+            .await;
+
+        let fetched_files: Vec<_> = results
+            .into_iter()
+            .filter_map(|r| match r {
+                Ok(file) => Some(file),
+                Err(e) => match e {
+                    crate::error::AiDocsError::OptionalFileNotFound(_) => None,
+                    other => {
+                        warn!("  ✗ {other}");
+                        None
+                    }
+                },
+            })
+            .collect();
+
+        if fetched_files.is_empty() {
+            warn!("  ✗ no files fetched for {crate_name}@{version}");
+            stats.errors += 1;
+            continue;
         }
+
+        let saved = storage::save_crate_files(
+            &rust_output_dir,
+            crate_name,
+            &version,
+            repo,
+            &resolved,
+            &fetched_files,
+            crate_doc,
+            config.settings.max_file_size_kb,
+        )?;
+        saved_crates.push(saved);
+        stats.synced += 1;
     }
 
     index::generate_index(&rust_output_dir, &saved_crates)?;
@@ -217,6 +208,46 @@ async fn run_sync(config_path: &PathBuf, force: bool) -> Result<()> {
     );
 
     Ok(())
+}
+
+fn build_requests(subpath: Option<&str>, explicit_files: Option<Vec<String>>) -> Vec<FileRequest> {
+    if let Some(files) = explicit_files {
+        return files
+            .into_iter()
+            .map(|f| FileRequest {
+                original_path: f.clone(),
+                candidates: vec![f],
+                required: true,
+            })
+            .collect();
+    }
+
+    let prefix = subpath
+        .map(|s| s.trim_matches('/'))
+        .filter(|s| !s.is_empty())
+        .map(|s| format!("{s}/"))
+        .unwrap_or_default();
+
+    vec![
+        FileRequest {
+            original_path: format!("{prefix}README.md"),
+            candidates: vec![
+                format!("{prefix}README.md"),
+                format!("{prefix}Readme.md"),
+                format!("{prefix}readme.md"),
+            ],
+            required: false,
+        },
+        FileRequest {
+            original_path: format!("{prefix}CHANGELOG.md"),
+            candidates: vec![
+                format!("{prefix}CHANGELOG.md"),
+                format!("{prefix}Changelog.md"),
+                format!("{prefix}changelog.md"),
+            ],
+            required: false,
+        },
+    ]
 }
 
 fn run_status(config_path: &PathBuf) -> Result<()> {
@@ -243,7 +274,7 @@ fn run_check(config_path: &PathBuf) -> Result<()> {
     if failing {
         print_status_table(&statuses);
         return Err(error::AiDocsError::Other(
-            "Documentation is outdated or missing. Run: cargo ai-docs sync".to_string(),
+            "Documentation is outdated or missing. Run: cargo ai-fdocs sync".to_string(),
         ));
     }
 

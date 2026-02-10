@@ -37,6 +37,9 @@ pub enum AiDocsError {
         tried_tags: Vec<String>,
     },
 
+    #[error("Optional file not found: {0}")]
+    OptionalFileNotFound(String),
+
     #[error("{0}")]
     Other(String),
 }
