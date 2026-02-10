@@ -10,6 +10,8 @@ use tracing::{error, info, warn};
 
 use crate::config::Config;
 use crate::error::Result;
+use crate::fetcher::GitHubFetcher;
+use crate::resolver::LockResolver;
 
 #[derive(Parser)]
 #[command(name = "cargo-ai-fdocs")]
@@ -27,12 +29,10 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Sync documentation based on lockfile
     Sync {
         #[arg(short, long)]
         force: bool,
     },
-    /// Show current documentation status
     Status,
 }
 
@@ -53,112 +53,63 @@ async fn main() {
 
 async fn run() -> Result<()> {
     let CargoCli::AiFdocs(cli) = CargoCli::parse();
-    let config_path = PathBuf::from("ai-fdocs.toml");
-    let project_root = PathBuf::from(".");
 
     match cli.command {
-        Commands::Sync { force } => {
-            info!("Starting sync... (force={force})");
+        Commands::Sync { .. } => {
+            let config_path = PathBuf::from("ai-fdocs.toml");
+            let config = Config::load(&config_path)?;
+            info!(
+                "Config loaded. Processing {} crates...",
+                config.crates.len()
+            );
 
-            let config = match Config::load(&config_path) {
-                Ok(cfg) => cfg,
-                Err(error::AiDocsError::ConfigNotFound(_)) => {
-                    print_config_example();
-                    return Ok(());
-                }
-                Err(e) => return Err(e),
-            };
-            info!("Config loaded: {} crates defined.", config.crates.len());
+            let lock_path = PathBuf::from("Cargo.lock");
+            let locked_versions = LockResolver::resolve(&lock_path)?;
+            info!(
+                "Cargo.lock parsed. Found {} packages.",
+                locked_versions.len()
+            );
 
-            let lock_versions = resolver::resolve_versions(&project_root)?;
-            info!("Cargo.lock parsed: {} packages found.", lock_versions.len());
-
-            let github = fetcher::GitHubClient::new()?;
-
-            for (crate_name, crate_config) in &config.crates {
-                let version = match lock_versions.get(crate_name.as_str()) {
-                    Some(v) => v,
-                    None => {
-                        warn!("Crate '{crate_name}' not found in Cargo.lock. Skipping.");
-                        continue;
-                    }
-                };
-
-                info!(
-                    "Processing {}@{} from {}...",
-                    crate_name, version, crate_config.repo
-                );
-
-                let resolved = github
-                    .resolve_ref(&crate_config.repo, crate_name, version)
-                    .await?;
-
-                if resolved.is_fallback {
-                    warn!(
-                        "⚠ {}@{}: No tag found. Using '{}' branch (docs may differ).",
-                        crate_name, version, resolved.git_ref
-                    );
-                }
-
-                let fetched_files = match &crate_config.files {
-                    Some(explicit_files) => {
-                        github
-                            .fetch_explicit_files(
-                                &crate_config.repo,
-                                &resolved.git_ref,
-                                explicit_files,
-                            )
-                            .await?
-                    }
-                    None => {
-                        github
-                            .fetch_default_files(
-                                &crate_config.repo,
-                                &resolved.git_ref,
-                                crate_config.subpath.as_deref(),
-                            )
-                            .await?
-                    }
-                };
-
-                info!(
-                    "  ✓ {}@{}: {} files fetched (ref: {}{})",
-                    crate_name,
-                    version,
-                    fetched_files.len(),
-                    resolved.git_ref,
-                    if resolved.is_fallback {
-                        " ⚠ fallback"
-                    } else {
-                        ""
-                    }
-                );
-
-                for f in &fetched_files {
-                    info!("    - {} ({} bytes)", f.path, f.content.len());
-                }
+            let fetcher = GitHubFetcher::new()?;
+            if fetcher.token_present {
+                info!("GitHub token detected.");
             }
 
-            info!("Sync complete.");
+            for (name, crate_cfg) in &config.crates {
+                info!("Processing crate: {name}");
+
+                let Some(version) = locked_versions.get(name) else {
+                    warn!("Crate '{name}' not found in Cargo.lock. Skipping.");
+                    continue;
+                };
+                info!("  Locked version: {version}");
+
+                let resolved = fetcher.resolve_ref(&crate_cfg.repo, name, version).await?;
+                if resolved.is_fallback {
+                    warn!("  ⚠ Fallback to branch: {}", resolved.git_ref);
+                } else {
+                    info!("  Tag found: {}", resolved.git_ref);
+                }
+
+                let readme_path = if let Some(sub) = &crate_cfg.subpath {
+                    format!("{sub}/README.md")
+                } else {
+                    "README.md".to_string()
+                };
+
+                match fetcher
+                    .fetch_file(&crate_cfg.repo, &resolved.git_ref, &readme_path)
+                    .await?
+                {
+                    Some(content) => info!("  ✅ README.md fetched ({} bytes)", content.len()),
+                    None => warn!("  ❌ README.md not found at {readme_path}"),
+                }
+            }
         }
         Commands::Status => {
-            println!("Crate            Lock Version    Docs Status");
-            println!("─────────────────────────────────────────────");
-            println!("(Not implemented yet — Stage 4)");
+            println!("(Status command implementation pending Stage 4)");
         }
     }
 
     Ok(())
-}
-
-fn print_config_example() {
-    eprintln!("ai-fdocs.toml not found. Create one in your project root.");
-    eprintln!();
-    eprintln!("Example:");
-    eprintln!(r#"[crates.axum]"#);
-    eprintln!(r#"repo = \"tokio-rs/axum\""#);
-    eprintln!();
-    eprintln!(r#"[crates.serde]"#);
-    eprintln!(r#"repo = \"serde-rs/serde\""#);
-    eprintln!(r#"ai_notes = \"Use derive macros for serialization.\""#);
 }

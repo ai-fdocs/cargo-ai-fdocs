@@ -6,36 +6,37 @@ use serde::Deserialize;
 use crate::error::{AiDocsError, Result};
 
 #[derive(Debug, Deserialize)]
-struct CargoLock {
-    package: Vec<PackageEntry>,
+struct LockFile {
+    package: Vec<Package>,
 }
 
 #[derive(Debug, Deserialize)]
-struct PackageEntry {
+struct Package {
     name: String,
     version: String,
-    #[allow(dead_code)]
-    source: Option<String>,
 }
 
-/// Parse Cargo.lock and return a map: crate_name -> version.
-pub fn resolve_versions(project_root: &Path) -> Result<HashMap<String, String>> {
-    let lock_path = project_root.join("Cargo.lock");
+pub struct LockResolver;
 
-    if !lock_path.exists() {
-        return Err(AiDocsError::CargoLockNotFound);
+impl LockResolver {
+    /// Reads Cargo.lock and returns HashMap<crate_name, version>
+    pub fn resolve(path: &Path) -> Result<HashMap<String, String>> {
+        if !path.exists() {
+            return Err(AiDocsError::CargoLockNotFound);
+        }
+
+        let content = std::fs::read_to_string(path)?;
+
+        let lock: LockFile =
+            toml::from_str(&content).map_err(|e| AiDocsError::CargoLockParse(e.to_string()))?;
+
+        let mut map = HashMap::new();
+        for pkg in lock.package {
+            // MVP behavior: if multiple versions exist for one crate,
+            // keep the last occurrence.
+            map.insert(pkg.name, pkg.version);
+        }
+
+        Ok(map)
     }
-
-    let content = std::fs::read_to_string(&lock_path)?;
-    let lock: CargoLock =
-        toml::from_str(&content).map_err(|e| AiDocsError::CargoLockParse(e.to_string()))?;
-
-    let mut versions = HashMap::new();
-    for pkg in lock.package {
-        // If crate appears multiple times with different versions,
-        // keep the last occurrence for now.
-        versions.insert(pkg.name, pkg.version);
-    }
-
-    Ok(versions)
 }
