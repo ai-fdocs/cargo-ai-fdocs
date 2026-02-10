@@ -85,10 +85,12 @@ docs/ai/vendor-docs/rust/
 ├── _INDEX.md
 ├── axum@<version>/
 │   ├── .aifd-meta.toml
+│   ├── _SUMMARY.md
 │   ├── README.md
 │   └── CHANGELOG.md
 └── sqlx@<version>/
     ├── .aifd-meta.toml
+    ├── _SUMMARY.md
     ├── README.md
     └── docs__migration-guide.md
 ```
