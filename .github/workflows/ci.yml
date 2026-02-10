@@ -1,12 +1,7 @@
-name: CI
+name: CI (temporarily manual only)
 
 on:
-  push:
-    branches:
-      - '**'
-  pull_request:
-  schedule:
-    - cron: '0 4 * * *'
+  workflow_dispatch:
 
 permissions:
   contents: read

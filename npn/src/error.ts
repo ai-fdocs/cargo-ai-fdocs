@@ -1,0 +1,6 @@
+export class AiDocsError extends Error {
+  constructor(message: string, public readonly code: string) {
+    super(message);
+    this.name = "AiDocsError";
+  }
+}

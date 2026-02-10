@@ -1,0 +1,42 @@
+name: NPM (npn)
+
+on:
+  push:
+    paths:
+      - 'npn/**'
+      - '.github/workflows/npm-npn.yml'
+  pull_request:
+    paths:
+      - 'npn/**'
+      - '.github/workflows/npm-npn.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    name: Build and test npn package
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: npn
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: 'npn/package-lock.json'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm test

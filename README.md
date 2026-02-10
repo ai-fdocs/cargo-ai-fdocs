@@ -9,6 +9,24 @@ It syncs README/CHANGELOG/guides from GitHub repositories for versions pinned in
 `Cargo.lock`, then stores them locally under `docs/ai/vendor-docs/rust/` so
 Cursor, Copilot, Windsurf, and other assistants can use up-to-date context.
 
+
+## Repository layout (Rust + NPM versions)
+
+This repository currently contains **two aligned implementations** of AI Fresh Docs:
+
+- Rust CLI (`cargo-ai-fdocs`) in the repository root (`src/`, Cargo-based toolchain);
+- NPM/Node.js CLI (`npm-ai-fdocs`) in [`npn/`](./npn).
+
+The `npn/` folder is the NPM version of AI Fresh Docs and is expected to stay
+functionally aligned with the main implementation, with ecosystem-specific
+adaptations for NPM (lockfile/dependency resolution, package metadata source,
+Node build/test toolchain).
+
+Alignment policy for `npn/`:
+- same core command surface: `init`, `sync`, `status`, `check`;
+- same output layout principles (`_INDEX.md`, per-package folders, metadata);
+- same cache/status semantics where possible, adapted for npm packages.
+
 ## Why this exists
 
 In practice, many AI coding failures happen not because the model cannot reason,
@@ -20,6 +38,20 @@ We treat this as an engineering hygiene problem:
 - lockfile version is the source of truth;
 - docs are fetched for that exact version (or fallback branch with warning);
 - local docs are refreshed after dependency updates.
+
+## Safety and degraded-mode behavior
+
+AI Fresh Docs is designed to be **non-blocking** for your development platform.
+If external documentation sources (GitHub/registry) are unavailable, the tool must
+behave safely:
+
+- never mutate or delete project source code;
+- keep already downloaded docs cache intact unless explicit prune rules apply;
+- continue processing other dependencies (best-effort) instead of crashing whole run;
+- return clear diagnostics in `status/check` so CI and users can see what failed;
+- fail only the docs check contract (`check` exit code) rather than breaking runtime/application logic.
+
+In short: network outages degrade docs freshness, but must not break the host project.
 
 ## Current alpha scope (this repository)
 
