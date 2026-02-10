@@ -75,11 +75,24 @@ pub fn generate_index(output_dir: &Path, crates: &[SavedCrate]) -> Result<()> {
 }
 
 fn section_id(saved: &SavedCrate) -> String {
-    format!("{}-{}", saved.name, saved.version)
-        .to_lowercase()
-        .chars()
-        .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
-        .collect()
+    let raw = format!("{}-{}", saved.name, saved.version).to_lowercase();
+    let mut out = String::with_capacity(raw.len());
+    let mut last_was_sep = false;
+
+    for ch in raw.chars() {
+        if ch.is_ascii_alphanumeric() || ch == '_' {
+            out.push(ch);
+            last_was_sep = false;
+            continue;
+        }
+
+        if !last_was_sep {
+            out.push('-');
+            last_was_sep = true;
+        }
+    }
+
+    out.trim_matches('-').to_string()
 }
 
 #[cfg(test)]
@@ -98,6 +111,20 @@ mod tests {
             ai_notes: String::new(),
         };
 
-        assert_eq!(section_id(&crate_info), "serde_json-10145");
+        assert_eq!(section_id(&crate_info), "serde_json-1-0-145");
+    }
+
+    #[test]
+    fn section_id_collapses_mixed_separators() {
+        let crate_info = SavedCrate {
+            name: "my.crate/name".to_string(),
+            version: "2..0+alpha".to_string(),
+            git_ref: "v2.0.0-alpha".to_string(),
+            is_fallback: false,
+            files: vec![],
+            ai_notes: String::new(),
+        };
+
+        assert_eq!(section_id(&crate_info), "my-crate-name-2-0-alpha");
     }
 }
