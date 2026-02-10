@@ -35,12 +35,13 @@ pub fn generate_index(output_dir: &Path, crates: &[SavedCrate]) -> Result<()> {
                 "- [{}@{}](#{})\n",
                 saved.name,
                 saved.version,
-                section_anchor(saved)
+                section_id(saved)
             ));
         }
         content.push('\n');
 
         for saved in &sorted {
+            content.push_str(&format!("<a id=\"{}\"></a>\n", section_id(saved)));
             if saved.is_fallback {
                 content.push_str(&format!(
                     "## {}@{} ⚠️ (fetched from `{}`, no tag for v{})\n\n",
@@ -73,8 +74,8 @@ pub fn generate_index(output_dir: &Path, crates: &[SavedCrate]) -> Result<()> {
     Ok(())
 }
 
-fn section_anchor(saved: &SavedCrate) -> String {
-    format!("{}{}", saved.name, saved.version)
+fn section_id(saved: &SavedCrate) -> String {
+    format!("{}-{}", saved.name, saved.version)
         .to_lowercase()
         .chars()
         .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
@@ -83,11 +84,11 @@ fn section_anchor(saved: &SavedCrate) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::section_anchor;
+    use super::section_id;
     use crate::storage::SavedCrate;
 
     #[test]
-    fn section_anchor_normalizes_header_text() {
+    fn section_id_normalizes_crate_name_and_version() {
         let crate_info = SavedCrate {
             name: "serde_json".to_string(),
             version: "1.0.145".to_string(),
@@ -97,6 +98,6 @@ mod tests {
             ai_notes: String::new(),
         };
 
-        assert_eq!(section_anchor(&crate_info), "serde_json10145");
+        assert_eq!(section_id(&crate_info), "serde_json-10145");
     }
 }
