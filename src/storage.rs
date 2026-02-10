@@ -110,8 +110,12 @@ fn inject_header(
 }
 
 fn should_inject_header(file_path: &str) -> bool {
-    let lower = file_path.to_lowercase();
-    lower.ends_with(".md") || lower.ends_with(".html") || lower.ends_with(".htm")
+    let path = std::path::Path::new(file_path);
+    path.extension().is_some_and(|ext| {
+        ext.eq_ignore_ascii_case("md")
+            || ext.eq_ignore_ascii_case("html")
+            || ext.eq_ignore_ascii_case("htm")
+    })
 }
 
 fn floor_char_boundary(s: &str, mut idx: usize) -> usize {
@@ -177,8 +181,7 @@ pub fn is_cached(
                 && meta
                     .config_fingerprint
                     .as_ref()
-                    .map(|fp| fp == &expected_fp)
-                    .unwrap_or(false)
+                    .is_some_and(|fp| fp == &expected_fp)
         }
         None => false,
     }
@@ -284,7 +287,7 @@ pub fn read_cached_info(
 
     let mut files: Vec<String> = fs::read_dir(&crate_dir)
         .ok()?
-        .filter_map(|e| e.ok())
+        .filter_map(std::result::Result::ok)
         .filter_map(|e| {
             let name = e.file_name().to_str()?.to_string();
             if name.starts_with('.') || name == "_SUMMARY.md" {
@@ -333,13 +336,12 @@ pub fn prune(
             continue;
         };
 
-        let should_remove = if !configured.contains(crate_name) {
-            true
+        let should_remove = if configured.contains(crate_name) {
+            lock_versions
+                .get(crate_name)
+                .is_none_or(|lock_ver| lock_ver != dir_version)
         } else {
-            match lock_versions.get(crate_name) {
-                Some(lock_ver) => lock_ver != dir_version,
-                None => true,
-            }
+            true
         };
 
         if should_remove {
