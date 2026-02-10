@@ -24,6 +24,8 @@ use crate::fetcher::github::{FetchedFile, FileRequest, GitHubFetcher};
 use crate::init::run_init as run_init_command;
 use crate::status::{collect_status, print_status_table, DocsStatus};
 
+const DEFAULT_CONFIG_PATH: &str = "ai-fdocs.toml";
+
 #[derive(Parser)]
 #[command(name = "cargo-ai-fdocs")]
 #[command(bin_name = "cargo")]
@@ -43,26 +45,33 @@ struct Cli {
 enum Commands {
     /// Download/update vendor documentation
     Sync {
-        #[arg(short, long, default_value = "ai-fdocs.toml")]
+        #[arg(short, long, default_value = DEFAULT_CONFIG_PATH)]
         config: PathBuf,
+        /// Ignore local cache and re-fetch configured docs.
         #[arg(long, default_value_t = false)]
         force: bool,
     },
+    /// Show documentation sync status for configured crates.
     Status {
-        #[arg(short, long, default_value = "ai-fdocs.toml")]
+        #[arg(short, long, default_value = DEFAULT_CONFIG_PATH)]
         config: PathBuf,
+        /// Output format for status report.
         #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
         format: OutputFormat,
     },
+    /// Exit non-zero if any crate docs are not synced.
     Check {
-        #[arg(short, long, default_value = "ai-fdocs.toml")]
+        #[arg(short, long, default_value = DEFAULT_CONFIG_PATH)]
         config: PathBuf,
+        /// Output format for check report.
         #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
         format: OutputFormat,
     },
+    /// Generate or refresh ai-fdocs config template.
     Init {
-        #[arg(short, long, default_value = "ai-fdocs.toml")]
+        #[arg(short, long, default_value = DEFAULT_CONFIG_PATH)]
         config: PathBuf,
+        /// Overwrite existing config file.
         #[arg(long, default_value_t = false)]
         force: bool,
     },
@@ -467,6 +476,7 @@ mod tests {
     };
     use crate::error::AiDocsError;
     use crate::fetcher::github::FetchedFile;
+    use clap::CommandFactory;
 
     #[test]
     fn emits_plain_errors_only_for_table_outside_gha() {
@@ -514,5 +524,31 @@ mod tests {
         let kept = collect_fetched_files(results, "demo", "1.0.0");
         assert_eq!(kept.len(), 1);
         assert_eq!(kept[0].path, "README.md");
+    }
+
+    #[test]
+    fn cli_subcommands_have_consistent_help_and_config_flag() {
+        let mut command = super::CargoCli::command();
+        command.build();
+
+        let ai_fdocs_cmd = command
+            .find_subcommand("ai-fdocs")
+            .expect("ai-fdocs subcommand present");
+
+        for sub in ["sync", "status", "check", "init"] {
+            let sub_cmd = ai_fdocs_cmd
+                .find_subcommand(sub)
+                .unwrap_or_else(|| panic!("missing subcommand: {sub}"));
+
+            assert!(
+                sub_cmd.get_about().is_some(),
+                "subcommand should have help text: {sub}"
+            );
+
+            let has_config = sub_cmd
+                .get_arguments()
+                .any(|arg| arg.get_id().as_str() == "config");
+            assert!(has_config, "subcommand should expose --config: {sub}");
+        }
     }
 }
