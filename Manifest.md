@@ -186,7 +186,7 @@ JSON-контракт `status/check --format json`:
 ### v0.3 (stability envelope)
 - Для `.aifd-meta.toml` введена схема `schema_version = 1`; legacy-мета без версии мигрируется при чтении, а более новые неизвестные версии считаются несовместимыми.
 - ✅ Улучшен UX `_INDEX.md` для больших dependency graph (навигация, секции, подсказки для AI).
-- Уточнить и унифицировать сообщения CLI по всем подкомандам (`sync/status/check/init`).
+- ✅ Сообщения CLI унифицированы по всем подкомандам (`sync/status/check/init`).
 
 ### v1.0 (stable)
 - Финальная стабилизация CLI и формата выходных данных (semver promises).
@@ -203,6 +203,7 @@ JSON-контракт `status/check --format json`:
 - ✅ Кроссплатформенный smoke matrix (Linux/macOS/Windows) и policy совместимости зафиксированы.
 - ✅ Интеграционные сценарии покрывают fallback на branch и partial failures fetch-пайплайна.
 - ✅ Техдолг `too_many_arguments` вокруг `storage::save_crate_files` снят рефакторингом API.
+- ✅ Сообщения CLI приведены к единому формату для `sync/status/check/init`.
 
 ### После v1.0
 - Расширение экосистемы sibling-проектами (Node/npm и далее).

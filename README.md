@@ -252,8 +252,8 @@ with your project’s real dependency graph.
 ## Roadmap to stable release
 
 ### 1) Reliability hardening (near-term)
-- Improve retry/backoff behavior for GitHub API and raw-content downloads.
-- Add clearer error classification (auth/rate-limit/not-found/network) in `sync` summary.
+- [x] Improve retry/backoff behavior for GitHub API and raw-content downloads.
+- [x] Add clearer error classification (auth/rate-limit/not-found/network) in `sync` summary.
 - [x] Expand integration tests for lockfile parsing, fallback-to-branch, and partial failure scenarios.
 
 ### 2) CI and team workflows
