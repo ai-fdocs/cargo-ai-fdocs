@@ -1,3 +1,6 @@
+import { AiDocsError } from "./error.js";
+import { classifyHttpError, fetchWithRetry } from "./net.js";
+
 export interface PackageInfo {
   name: string;
   repository: string | null;
@@ -30,22 +33,18 @@ export class NpmRegistryClient {
     const encodedName = name.replace("/", "%2F");
     const url = `${this.baseUrl}/${encodedName}`;
 
+    const resp = await fetchWithRetry(url, { headers: { Accept: "application/json" } });
+    if (resp.status === 404) return null;
+    if (!resp.ok) {
+      const kind = classifyHttpError(resp.status);
+      throw new AiDocsError(`npm registry request failed for ${name}: ${resp.status}`, `NPM_${kind.toUpperCase()}`);
+    }
+
     try {
-      const resp = await fetch(url, { headers: { Accept: "application/json" } });
-
-      if (resp.status === 404) return null;
-
-      if (resp.status === 429) {
-        await sleep(2000);
-        const retry = await fetch(url);
-        if (!retry.ok) return null;
-        return parsePackageInfo((await retry.json()) as NpmPackageResponse);
-      }
-
-      if (!resp.ok) return null;
-      return parsePackageInfo((await resp.json()) as NpmPackageResponse);
+      const data = (await resp.json()) as NpmPackageResponse;
+      return parsePackageInfo(data);
     } catch {
-      return null;
+      throw new AiDocsError(`Failed to parse npm registry response for ${name}`, "NPM_PARSE");
     }
   }
 
@@ -54,13 +53,18 @@ export class NpmRegistryClient {
     const encodedVersion = encodeURIComponent(version);
     const url = `${this.baseUrl}/${encodedName}/${encodedVersion}`;
 
+    const resp = await fetchWithRetry(url, { headers: { Accept: "application/json" } });
+    if (resp.status === 404) return null;
+    if (!resp.ok) {
+      const kind = classifyHttpError(resp.status);
+      throw new AiDocsError(`npm registry tarball request failed for ${name}@${version}: ${resp.status}`, `NPM_${kind.toUpperCase()}`);
+    }
+
     try {
-      const resp = await fetch(url, { headers: { Accept: "application/json" } });
-      if (!resp.ok) return null;
       const data = (await resp.json()) as NpmVersionResponse;
       return data.dist?.tarball ?? null;
     } catch {
-      return null;
+      throw new AiDocsError(`Failed to parse npm registry response for ${name}@${version}`, "NPM_PARSE");
     }
   }
 }
@@ -145,6 +149,3 @@ export function extractSubpathFromRepo(repoField: unknown): string | undefined {
   return undefined;
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}

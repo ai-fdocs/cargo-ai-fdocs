@@ -28,7 +28,7 @@
 - [x] A2.3 Стабилизировать `config_hash` (normalize `subpath`, порядок `files`).
 - [x] A3 (частично) Unit-тесты для cache/hash совместимости.
 - [x] B1.1 `check --format json` (machine-readable).
-- [ ] A1 Единая retry/backoff стратегия для сетевых источников.
+- [x] A1 (частично) Добавлен общий retry/backoff + классификация HTTP ошибок в network-слое.
 - [ ] B1.2 GitHub Actions workflow для `npn/**` + fixture `check` job.
 - [ ] B2 Runbook и token-management рекомендации.
 
