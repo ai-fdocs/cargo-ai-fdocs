@@ -120,7 +120,7 @@ fn render_docsrs_markdown(crate_name: &str, version: &str, html: &str) -> String
         "- [rustdoc root]({canonical_base}/{crate_name}/)\n"
     ));
     for link in links.into_iter().take(20) {
-        out.push_str(&format!("- [{link}]({canonical_base}{link})\n"));
+        out.push_str(&format!("- [{link}](https://docs.rs{link})\n"));
     }
 
     out.push_str("\n## Example\n\n");

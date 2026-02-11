@@ -434,7 +434,10 @@ async fn sync_one_crate_from_github(
     source_kind_override: Option<&'static str>,
 ) -> SyncOutcome {
     let Some(repo) = crate_doc.github_repo().map(str::to_string) else {
-        warn!("Crate '{crate_name}' has no GitHub repo in config, skipping");
+        warn!("Crate '{crate_name}' has no GitHub repo in config");
+        if source_kind_override.is_some() {
+            return SyncOutcome::Error(SyncErrorKind::Other);
+        }
         return SyncOutcome::Skipped;
     };
 
