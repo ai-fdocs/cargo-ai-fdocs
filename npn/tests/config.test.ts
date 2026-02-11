@@ -64,6 +64,33 @@ describe("loadConfig docs_source", () => {
     expect(load).toThrowError(/settings\.sync_concurrency must be a positive integer/);
   });
 
+
+  it("fails fast on non-integer sync_concurrency", () => {
+    const root = mkdtempSync(join(tmpdir(), "aifd-config-"));
+    writeFileSync(
+      join(root, "ai-fdocs.toml"),
+      ['[settings]', 'sync_concurrency = 1.5', '', '[packages.lodash]', 'repo = "lodash/lodash"'].join("\n"),
+      "utf-8"
+    );
+
+    const load = () => loadConfig(root);
+    expect(load).toThrowError(AiDocsError);
+    expect(load).toThrowError(/settings\.sync_concurrency must be a positive integer/);
+  });
+
+  it("fails fast on non-numeric sync_concurrency", () => {
+    const root = mkdtempSync(join(tmpdir(), "aifd-config-"));
+    writeFileSync(
+      join(root, "ai-fdocs.toml"),
+      ['[settings]', 'sync_concurrency = true', '', '[packages.lodash]', 'repo = "lodash/lodash"'].join("\n"),
+      "utf-8"
+    );
+
+    const load = () => loadConfig(root);
+    expect(load).toThrowError(AiDocsError);
+    expect(load).toThrowError(/settings\.sync_concurrency must be a positive integer/);
+  });
+
   it("keeps backward compatibility with legacy experimental_npm_tarball=false", () => {
     const root = mkdtempSync(join(tmpdir(), "aifd-config-"));
     writeFileSync(

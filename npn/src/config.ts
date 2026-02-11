@@ -47,10 +47,18 @@ export function loadConfig(projectRoot: string): Config {
   const hasLegacyExperimental = Object.prototype.hasOwnProperty.call(settings, "experimental_npm_tarball");
   const legacyExperimental = Boolean(settings.experimental_npm_tarball ?? false);
 
-  const syncConcurrency = Number(settings.sync_concurrency ?? 8);
+  const rawSyncConcurrency = settings.sync_concurrency;
+  if (rawSyncConcurrency !== undefined && typeof rawSyncConcurrency !== "number") {
+    throw new AiDocsError(
+      `settings.sync_concurrency must be a positive integer, got: ${String(rawSyncConcurrency)}`,
+      "INVALID_CONFIG"
+    );
+  }
+
+  const syncConcurrency = rawSyncConcurrency === undefined ? 8 : rawSyncConcurrency;
   if (!Number.isInteger(syncConcurrency) || syncConcurrency <= 0) {
     throw new AiDocsError(
-      `settings.sync_concurrency must be a positive integer, got: ${String(settings.sync_concurrency)}`,
+      `settings.sync_concurrency must be a positive integer, got: ${String(rawSyncConcurrency)}`,
       "INVALID_CONFIG"
     );
   }
