@@ -22,6 +22,16 @@ pub struct CrateMeta {
     pub is_fallback: bool,
     #[serde(default)]
     pub config_fingerprint: Option<String>,
+    #[serde(default)]
+    pub source_kind: Option<String>,
+    #[serde(default)]
+    pub artifact_path: Option<String>,
+    #[serde(default)]
+    pub docsrs_input_url: Option<String>,
+    #[serde(default)]
+    pub upstream_latest_version: Option<String>,
+    #[serde(default)]
+    pub truncated: Option<bool>,
 }
 
 #[derive(Debug, Clone)]
@@ -243,6 +253,11 @@ pub fn save_crate_files(
         fetched_at: Utc::now().format("%Y-%m-%d").to_string(),
         is_fallback: save_ctx.resolved.is_fallback,
         config_fingerprint: Some(crate_config_fingerprint(req.crate_config)),
+        source_kind: Some(save_ctx.source_kind.to_string()),
+        artifact_path: save_ctx.artifact_path.map(str::to_string),
+        docsrs_input_url: save_ctx.docsrs_input_url.map(str::to_string),
+        upstream_latest_version: save_ctx.upstream_latest_version.map(str::to_string),
+        truncated: save_ctx.truncated,
     };
 
     save_meta(&crate_dir.join(".aifd-meta.toml"), &meta)?;
@@ -269,10 +284,62 @@ pub fn save_crate_files(
     Ok(saved)
 }
 
+pub fn save_latest_api_markdown(
+    output_dir: &Path,
+    crate_name: &str,
+    version: &str,
+    api_markdown: &str,
+    docsrs_input_url: &str,
+    truncated: bool,
+    crate_config: &CrateDoc,
+) -> Result<SavedCrate> {
+    let crate_dir = output_dir.join(format!("{crate_name}@{version}"));
+
+    if crate_dir.exists() {
+        fs::remove_dir_all(&crate_dir)?;
+    }
+    fs::create_dir_all(&crate_dir)?;
+
+    fs::write(crate_dir.join("API.md"), api_markdown)?;
+
+    let meta = CrateMeta {
+        schema_version: META_SCHEMA_VERSION,
+        version: version.to_string(),
+        git_ref: format!("docsrs/{version}"),
+        fetched_at: Utc::now().format("%Y-%m-%d").to_string(),
+        is_fallback: false,
+        config_fingerprint: Some(crate_config_fingerprint(crate_config)),
+        source_kind: Some("docsrs".to_string()),
+        artifact_path: Some("API.md".to_string()),
+        docsrs_input_url: Some(docsrs_input_url.to_string()),
+        upstream_latest_version: Some(version.to_string()),
+        truncated: Some(truncated),
+    };
+
+    save_meta(&crate_dir.join(".aifd-meta.toml"), &meta)?;
+
+    let saved = SavedCrate {
+        name: crate_name.to_string(),
+        version: version.to_string(),
+        git_ref: format!("docsrs/{version}"),
+        is_fallback: false,
+        files: vec!["API.md".to_string()],
+        ai_notes: crate_config.ai_notes.clone(),
+    };
+
+    fs::write(crate_dir.join("_SUMMARY.md"), render_crate_summary(&saved))?;
+    Ok(saved)
+}
+
 pub struct SaveContext<'a> {
     pub repo: &'a str,
     pub resolved: &'a ResolvedRef,
     pub max_file_size_kb: usize,
+    pub source_kind: &'a str,
+    pub artifact_path: Option<&'a str>,
+    pub docsrs_input_url: Option<&'a str>,
+    pub upstream_latest_version: Option<&'a str>,
+    pub truncated: Option<bool>,
 }
 
 pub fn read_cached_info(

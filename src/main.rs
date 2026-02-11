@@ -21,6 +21,7 @@ use crate::config::{Config, DocsSource, SyncMode};
 use crate::error::AiDocsError;
 use crate::error::{Result, SyncErrorKind};
 use crate::fetcher::github::{FetchedFile, FileRequest, GitHubFetcher};
+use crate::fetcher::latest::{is_docsrs_fallback_eligible, LatestDocsFetcher};
 use crate::init::run_init as run_init_command;
 use crate::status::{collect_status, print_status_table, DocsStatus};
 
@@ -180,10 +181,7 @@ async fn run_sync(
     let sync_mode = resolve_sync_mode(mode_override, config.settings.sync_mode);
     info!("Resolved sync mode: {}", sync_mode.as_str());
     if matches!(sync_mode, SyncMode::LatestDocs) {
-        return Err(error::AiDocsError::Other(
-            "sync mode 'latest_docs' is beta and not implemented yet; keep default lockfile mode"
-                .to_string(),
-        ));
+        return run_sync_latest_docs(config, force).await;
     }
 
     match config.settings.docs_source {
@@ -278,6 +276,201 @@ async fn run_sync(
     Ok(())
 }
 
+async fn run_sync_latest_docs(config: Config, force: bool) -> Result<()> {
+    info!("Using docs source: crates.io + docs.rs (with GitHub fallback)");
+
+    let rust_output_dir = storage::rust_output_dir(&config.settings.output_dir);
+    let github_fetcher = Arc::new(GitHubFetcher::new());
+    let latest_fetcher = Arc::new(LatestDocsFetcher::new());
+
+    let mut saved_crates = Vec::new();
+    let mut stats = SyncStats::default();
+
+    let concurrency = config.settings.sync_concurrency;
+    let semaphore = Arc::new(Semaphore::new(concurrency));
+    let mut join_set = tokio::task::JoinSet::new();
+
+    for (crate_name, crate_doc) in config.crates.clone() {
+        let rust_output_dir = rust_output_dir.clone();
+        let github_fetcher = Arc::clone(&github_fetcher);
+        let latest_fetcher = Arc::clone(&latest_fetcher);
+        let semaphore = Arc::clone(&semaphore);
+        let max_file_size_kb = config.settings.max_file_size_kb;
+
+        join_set.spawn(async move {
+            let _permit = semaphore.acquire_owned().await.expect("semaphore closed");
+            sync_one_crate_latest(
+                rust_output_dir,
+                latest_fetcher,
+                github_fetcher,
+                crate_name,
+                crate_doc,
+                force,
+                max_file_size_kb,
+            )
+            .await
+        });
+    }
+
+    while let Some(joined) = join_set.join_next().await {
+        let result = match joined {
+            Ok(result) => result,
+            Err(e) => {
+                warn!("sync worker failed: {e}");
+                SyncOutcome::Error(SyncErrorKind::Other)
+            }
+        };
+
+        match result {
+            SyncOutcome::Synced(saved) => {
+                saved_crates.push(saved);
+                stats.synced += 1;
+            }
+            SyncOutcome::Cached(saved) => {
+                if let Some(saved) = saved {
+                    saved_crates.push(saved);
+                }
+                stats.cached += 1;
+            }
+            SyncOutcome::Skipped => stats.skipped += 1,
+            SyncOutcome::Error(kind) => stats.record_error(kind),
+        }
+    }
+
+    index::generate_index(&rust_output_dir, &saved_crates)?;
+    info!(
+        "✅ Latest-docs sync complete: {} synced, {} cached, {} skipped, {} errors",
+        stats.synced, stats.cached, stats.skipped, stats.errors
+    );
+
+    Ok(())
+}
+
+async fn sync_one_crate_latest(
+    rust_output_dir: PathBuf,
+    latest_fetcher: Arc<LatestDocsFetcher>,
+    github_fetcher: Arc<GitHubFetcher>,
+    crate_name: String,
+    crate_doc: crate::config::CrateDoc,
+    force: bool,
+    max_file_size_kb: usize,
+) -> SyncOutcome {
+    let version = match latest_fetcher.resolve_latest_version(&crate_name).await {
+        Ok(v) => v,
+        Err(e) => {
+            warn!("  ✗ failed to resolve latest version for {crate_name}: {e}");
+            return SyncOutcome::Error(e.sync_kind());
+        }
+    };
+
+    if !force && storage::is_cached(&rust_output_dir, &crate_name, &version, &crate_doc) {
+        info!("  ⏭ {crate_name}@{version}: cached, skipping");
+        let cached = storage::read_cached_info(&rust_output_dir, &crate_name, &version, &crate_doc);
+        return SyncOutcome::Cached(cached);
+    }
+
+    match latest_fetcher
+        .fetch_api_markdown(&crate_name, &version, max_file_size_kb)
+        .await
+    {
+        Ok(artifact) => match storage::save_latest_api_markdown(
+            &rust_output_dir,
+            &crate_name,
+            &version,
+            &artifact.markdown,
+            &artifact.docsrs_input_url,
+            artifact.truncated,
+            &crate_doc,
+        ) {
+            Ok(saved) => SyncOutcome::Synced(saved),
+            Err(e) => {
+                warn!("  ✗ failed to save docs.rs artifact for {crate_name}@{version}: {e}");
+                SyncOutcome::Error(e.sync_kind())
+            }
+        },
+        Err(e) if is_docsrs_fallback_eligible(&e) => {
+            warn!(
+                "  ⚠ docs.rs unavailable for {crate_name}@{version}: {e}; trying GitHub fallback"
+            );
+            sync_one_crate_from_github(
+                rust_output_dir,
+                github_fetcher,
+                crate_name,
+                crate_doc,
+                version,
+                max_file_size_kb,
+                Some("github_fallback"),
+            )
+            .await
+        }
+        Err(e) => {
+            warn!("  ✗ docs.rs fetch failed for {crate_name}@{version}: {e}");
+            SyncOutcome::Error(e.sync_kind())
+        }
+    }
+}
+
+async fn sync_one_crate_from_github(
+    rust_output_dir: PathBuf,
+    fetcher: Arc<GitHubFetcher>,
+    crate_name: String,
+    crate_doc: crate::config::CrateDoc,
+    version: String,
+    max_file_size_kb: usize,
+    source_kind_override: Option<&'static str>,
+) -> SyncOutcome {
+    let Some(repo) = crate_doc.github_repo().map(str::to_string) else {
+        warn!("Crate '{crate_name}' has no GitHub repo in config, skipping");
+        return SyncOutcome::Skipped;
+    };
+
+    let resolved = match fetcher
+        .resolve_ref(&repo, &crate_name, version.as_str())
+        .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            warn!("  ✗ failed to resolve ref for {crate_name}@{version}: {e}");
+            return SyncOutcome::Error(e.sync_kind());
+        }
+    };
+
+    let requests = build_requests(crate_doc.subpath.as_deref(), crate_doc.effective_files());
+    let results = fetcher
+        .fetch_files(&repo, &resolved.git_ref, &requests)
+        .await;
+
+    let fetched_files = collect_fetched_files(results, &crate_name, &version);
+    if fetched_files.files.is_empty() {
+        warn!("  ✗ no files fetched for {crate_name}@{version}");
+        return SyncOutcome::Error(SyncErrorKind::NotFound);
+    }
+
+    let source_kind = source_kind_override.unwrap_or("github");
+    let save_ctx = storage::SaveContext {
+        repo: &repo,
+        resolved: &resolved,
+        max_file_size_kb,
+        source_kind,
+        artifact_path: None,
+        docsrs_input_url: None,
+        upstream_latest_version: Some(&version),
+        truncated: None,
+    };
+
+    let save_req = storage::SaveRequest {
+        crate_name: &crate_name,
+        version: &version,
+        fetched_files: &fetched_files.files,
+        crate_config: &crate_doc,
+    };
+
+    match storage::save_crate_files(&rust_output_dir, &save_ctx, save_req) {
+        Ok(saved) => SyncOutcome::Synced(saved),
+        Err(e) => SyncOutcome::Error(e.sync_kind()),
+    }
+}
+
 async fn sync_one_crate(
     rust_output_dir: PathBuf,
     rust_versions: std::collections::HashMap<String, String>,
@@ -292,11 +485,6 @@ async fn sync_one_crate(
         return SyncOutcome::Skipped;
     };
 
-    let Some(repo) = crate_doc.github_repo().map(str::to_string) else {
-        warn!("Crate '{crate_name}' has no GitHub repo in config, skipping");
-        return SyncOutcome::Skipped;
-    };
-
     if !force && storage::is_cached(&rust_output_dir, &crate_name, &version, &crate_doc) {
         info!("  ⏭ {crate_name}@{version}: cached, skipping");
         let cached = storage::read_cached_info(&rust_output_dir, &crate_name, &version, &crate_doc);
@@ -304,64 +492,16 @@ async fn sync_one_crate(
     }
 
     info!("Syncing {crate_name}@{version}...");
-
-    let resolved = match fetcher
-        .resolve_ref(&repo, &crate_name, version.as_str())
-        .await
-    {
-        Ok(r) => r,
-        Err(e) => {
-            warn!("  ✗ failed to resolve ref for {crate_name}@{version}: {e}");
-            return SyncOutcome::Error(e.sync_kind());
-        }
-    };
-
-    if resolved.is_fallback {
-        warn!(
-            "  ⚠ no exact tag for {crate_name}@{version}, using {}",
-            resolved.git_ref
-        );
-    }
-
-    let requests = build_requests(crate_doc.subpath.as_deref(), crate_doc.effective_files());
-    let results = fetcher
-        .fetch_files(&repo, &resolved.git_ref, &requests)
-        .await;
-
-    let fetched_files = collect_fetched_files(results, &crate_name, &version);
-    if fetched_files.non_optional_errors > 0 && !fetched_files.files.is_empty() {
-        warn!(
-            "  ⚠ partial fetch for {crate_name}@{version}: {} file error(s), continuing with {} fetched file(s)",
-            fetched_files.non_optional_errors,
-            fetched_files.files.len()
-        );
-    }
-
-    if fetched_files.files.is_empty() {
-        warn!("  ✗ no files fetched for {crate_name}@{version}");
-        return SyncOutcome::Error(SyncErrorKind::NotFound);
-    }
-
-    let save_ctx = storage::SaveContext {
-        repo: &repo,
-        resolved: &resolved,
+    sync_one_crate_from_github(
+        rust_output_dir,
+        fetcher,
+        crate_name,
+        crate_doc,
+        version,
         max_file_size_kb,
-    };
-
-    let save_req = storage::SaveRequest {
-        crate_name: &crate_name,
-        version: &version,
-        fetched_files: &fetched_files.files,
-        crate_config: &crate_doc,
-    };
-
-    match storage::save_crate_files(&rust_output_dir, &save_ctx, save_req) {
-        Ok(saved) => SyncOutcome::Synced(saved),
-        Err(e) => {
-            warn!("  ✗ failed to save {crate_name}@{version}: {e}");
-            SyncOutcome::Error(e.sync_kind())
-        }
-    }
+        None,
+    )
+    .await
 }
 
 struct FetchCollection {
