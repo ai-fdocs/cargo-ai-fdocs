@@ -12,7 +12,8 @@
     "dev": "tsx src/cli.ts",
     "start": "node dist/cli.js",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "benchmark:source-strategy": "tsx scripts/benchmark-source-strategy.ts"
   },
   "files": [
     "dist",

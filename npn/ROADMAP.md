@@ -127,6 +127,8 @@
    - скорость.
 3. Зафиксировать decision record и обновить default source.
 
+Актуальный benchmark-отчёт: [`npn/docs/benchmarks/source-strategy-2026-02.md`](docs/benchmarks/source-strategy-2026-02.md).
+
 **Definition of Done (C):**
 - принято формальное решение по default source;
 - это решение отражено в README + config docs + migration notes.
