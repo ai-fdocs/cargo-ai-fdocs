@@ -32,6 +32,9 @@
 - [x] B1.2 GitHub Actions workflow для `npn/**` + fixture `check` job.
 - [x] B2 Runbook и token-management рекомендации.
 - [x] C1.1 Добавлены source-метрики в `sync` (итоги по активному источнику).
+- [x] C1.2 Добавлен machine-readable отчёт `sync --report-format json`.
+- [x] C1.3 JSON-режим `sync` очищен до строгого JSON вывода (без лишних логов).
+- [x] A1 (доп.) Добавлен short error summary по code-классам в `sync`.
 
 ---
 

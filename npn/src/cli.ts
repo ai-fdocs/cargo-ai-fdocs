@@ -25,10 +25,11 @@ program
   .command("sync")
   .description("Sync documentation based on lockfile")
   .option("-f, --force", "Force re-download ignoring cache", false)
+  .option("--report-format <format>", "Sync summary format: text | json", "text")
   .action(async (options) => {
     try {
       const { cmdSync } = await import("./commands/sync.js");
-      await cmdSync(process.cwd(), options.force);
+      await cmdSync(process.cwd(), options.force, options.reportFormat);
     } catch (e) {
       handleError(e);
     }

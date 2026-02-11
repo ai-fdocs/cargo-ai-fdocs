@@ -104,7 +104,8 @@ export function savePackageFiles(
   fetchedFiles: FetchedFile[],
   pkgConfig: PackageConfig,
   maxFileSizeKb: number,
-  configHash: string
+  configHash: string,
+  silent = false
 ): string[] {
   const pkgDir = join(outputDir, `${packageName}@${version}`);
   if (existsSync(pkgDir)) rmSync(pkgDir, { recursive: true, force: true });
@@ -137,7 +138,7 @@ export function savePackageFiles(
   ].join("\n") + "\n";
 
   writeFileSync(join(pkgDir, ".aifd-meta.toml"), meta, "utf-8");
-  console.log(chalk.green(`  💾 ${packageName}@${version}: ${savedNames.length} files saved.`));
+  if (!silent) console.log(chalk.green(`  💾 ${packageName}@${version}: ${savedNames.length} files saved.`));
   return savedNames;
 }
 

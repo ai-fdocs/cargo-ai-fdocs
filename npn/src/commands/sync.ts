@@ -9,6 +9,7 @@ import { isCachedV2, savePackageFiles, prune, readCachedInfo, type SavedPackage 
 import { generateIndex } from "../index.js";
 import { generateSummary, type SummaryFile } from "../summary.js";
 import { NpmRegistryClient } from "../registry.js";
+import { AiDocsError } from "../error.js";
 
 const MAX_CONCURRENT = 8;
 
@@ -19,6 +20,7 @@ interface SyncTaskResult {
   status: "synced" | "cached" | "skipped" | "error";
   source: SyncSource;
   message?: string;
+  errorCode?: string;
 }
 
 interface SourceStat {
@@ -26,6 +28,19 @@ interface SourceStat {
   errors: number;
   skipped: number;
   cached: number;
+}
+
+export interface SyncReport {
+  source: SyncSource;
+  totals: {
+    synced: number;
+    cached: number;
+    skipped: number;
+    errors: number;
+  };
+  sourceStats: Record<SyncSource, SourceStat>;
+  errorCodes: Record<string, number>;
+  issues: string[];
 }
 
 export function summarizeSourceStats(results: SyncTaskResult[]): Record<SyncSource, SourceStat> {
@@ -42,15 +57,83 @@ export function summarizeSourceStats(results: SyncTaskResult[]): Record<SyncSour
   return stats;
 }
 
-export async function cmdSync(projectRoot: string, force: boolean): Promise<void> {
-  console.log(chalk.blue(`Starting sync (v0.2)...${force ? " (force mode)" : ""}`));
+export function summarizeErrorCodes(results: SyncTaskResult[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+
+  for (const result of results) {
+    if (result.status !== "error") continue;
+    const code = result.errorCode ?? "UNKNOWN";
+    counts[code] = (counts[code] ?? 0) + 1;
+  }
+
+  return counts;
+}
+
+export function buildSyncReport(results: SyncTaskResult[], source: SyncSource): SyncReport {
+  return {
+    source,
+    totals: {
+      synced: results.filter((r) => r.status === "synced").length,
+      cached: results.filter((r) => r.status === "cached").length,
+      skipped: results.filter((r) => r.status === "skipped").length,
+      errors: results.filter((r) => r.status === "error").length,
+    },
+    sourceStats: summarizeSourceStats(results),
+    errorCodes: summarizeErrorCodes(results),
+    issues: results
+      .filter((r) => r.status === "error" || r.status === "skipped")
+      .map((r) => r.message)
+      .filter((msg): msg is string => Boolean(msg && msg.length > 0)),
+  };
+}
+
+function toErrorInfo(error: unknown): { message: string; code?: string } {
+  if (error instanceof AiDocsError) {
+    return { message: error.message, code: error.code };
+  }
+  if (error instanceof Error) {
+    return { message: error.message };
+  }
+  return { message: String(error) };
+}
+
+function printSyncSummary(report: SyncReport): void {
+  const activeStats = report.sourceStats[report.source];
+  console.log(
+    chalk.gray(
+      `Source stats (${report.source}): synced=${activeStats.synced}, cached=${activeStats.cached}, skipped=${activeStats.skipped}, errors=${activeStats.errors}`
+    )
+  );
+
+  const errorCodeSummary = Object.entries(report.errorCodes)
+    .sort((a, b) => b[1] - a[1])
+    .map(([code, count]) => `${code}=${count}`)
+    .join(", ");
+  if (errorCodeSummary) {
+    console.log(chalk.gray(`Error summary: ${errorCodeSummary}`));
+  }
+
+  console.log(
+    chalk.green(
+      `\n✅ Sync complete: ${report.totals.synced} synced, ${report.totals.cached} cached, ${report.totals.skipped} skipped, ${report.totals.errors} errors.`
+    )
+  );
+}
+
+export async function cmdSync(projectRoot: string, force: boolean, reportFormat: string = "text"): Promise<void> {
+  if (reportFormat !== "text" && reportFormat !== "json") {
+    throw new AiDocsError(`Unsupported --report-format value: ${reportFormat}`, "INVALID_FORMAT");
+  }
+  const jsonMode = reportFormat === "json";
+
+  if (!jsonMode) console.log(chalk.blue(`Starting sync (v0.2)...${force ? " (force mode)" : ""}`));
 
   const config = loadConfig(projectRoot);
   const lockVersions = resolveVersions(projectRoot);
   const outputDir = join(projectRoot, config.settings.output_dir);
 
   if (config.settings.prune) {
-    console.log(chalk.gray("Pruning outdated docs..."));
+    if (!jsonMode) console.log(chalk.gray("Pruning outdated docs..."));
     prune(outputDir, config, lockVersions);
   }
 
@@ -81,18 +164,26 @@ export async function cmdSync(projectRoot: string, force: boolean): Promise<void
         try {
           const tarballUrl = await npmRegistry.getTarballUrl(name, version);
           if (!tarballUrl) {
-            return { saved: null, status: "error", source: selectedSource, message: `${name}@${version}: no npm tarball URL` };
+            return {
+              saved: null,
+              status: "error",
+              source: selectedSource,
+              message: `${name}@${version}: no npm tarball URL`,
+              errorCode: "NPM_TARBALL_NOT_FOUND",
+            };
           }
 
           fetchedFiles = await fetchDocsFromNpmTarball(tarballUrl, pkgConfig.subpath, pkgConfig.files);
         } catch (e) {
-          return { saved: null, status: "error", source: selectedSource, message: `${name}@${version}: ${(e as Error).message}` };
+          const err = toErrorInfo(e);
+          return { saved: null, status: "error", source: selectedSource, message: `${name}@${version}: ${err.message}`, errorCode: err.code };
         }
       } else {
         try {
           resolved = await github.resolveRef(pkgConfig.repo, name, version);
         } catch (e) {
-          return { saved: null, status: "error", source: selectedSource, message: `${name}@${version}: ${(e as Error).message}` };
+          const err = toErrorInfo(e);
+          return { saved: null, status: "error", source: selectedSource, message: `${name}@${version}: ${err.message}`, errorCode: err.code };
         }
 
         try {
@@ -100,7 +191,8 @@ export async function cmdSync(projectRoot: string, force: boolean): Promise<void
             ? await github.fetchExplicitFiles(pkgConfig.repo, resolved.gitRef, pkgConfig.files)
             : await github.fetchDefaultFiles(pkgConfig.repo, resolved.gitRef, pkgConfig.subpath);
         } catch (e) {
-          return { saved: null, status: "error", source: selectedSource, message: `${name}@${version}: ${(e as Error).message}` };
+          const err = toErrorInfo(e);
+          return { saved: null, status: "error", source: selectedSource, message: `${name}@${version}: ${err.message}`, errorCode: err.code };
         }
       }
 
@@ -116,7 +208,8 @@ export async function cmdSync(projectRoot: string, force: boolean): Promise<void
         fetchedFiles,
         pkgConfig,
         config.settings.max_file_size_kb,
-        configHash
+        configHash,
+        jsonMode
       );
 
       const pkgDir = join(outputDir, `${name}@${version}`);
@@ -154,21 +247,12 @@ export async function cmdSync(projectRoot: string, force: boolean): Promise<void
   const results = await Promise.all(tasks);
 
   const savedPackages: SavedPackage[] = [];
-  let synced = 0;
-  let cached = 0;
-  let skipped = 0;
-  let errors = 0;
-
   for (const result of results) {
     if (result.saved) savedPackages.push(result.saved);
-    if (result.status === "synced") synced++;
-    if (result.status === "cached") cached++;
-    if (result.status === "skipped") {
-      skipped++;
+    if (!jsonMode && result.status === "skipped") {
       console.log(chalk.yellow(`  ⏭ ${result.message}`));
     }
-    if (result.status === "error") {
-      errors++;
+    if (!jsonMode && result.status === "error") {
       console.log(chalk.red(`  ❌ ${result.message}`));
     }
   }
@@ -176,13 +260,11 @@ export async function cmdSync(projectRoot: string, force: boolean): Promise<void
   savedPackages.sort((a, b) => a.name.localeCompare(b.name));
   generateIndex(outputDir, savedPackages);
 
-  const sourceStats = summarizeSourceStats(results);
-  const activeStats = sourceStats[selectedSource];
-  console.log(
-    chalk.gray(
-      `Source stats (${selectedSource}): synced=${activeStats.synced}, cached=${activeStats.cached}, skipped=${activeStats.skipped}, errors=${activeStats.errors}`
-    )
-  );
+  const report = buildSyncReport(results, selectedSource);
 
-  console.log(chalk.green(`\n✅ Sync complete: ${synced} synced, ${cached} cached, ${skipped} skipped, ${errors} errors.`));
+  if (reportFormat === "json") {
+    console.log(JSON.stringify(report, null, 2));
+  } else {
+    printSyncSummary(report);
+  }
 }

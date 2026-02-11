@@ -45,7 +45,8 @@ node dist/cli.js --help
 ## Commands
 
 - `ai-fdocs init [--overwrite]`
-- `ai-fdocs sync [--force]`
+- `ai-fdocs sync [--force] [--report-format text|json]`
+  - `--report-format json` prints JSON-only output (no extra log lines).
 - `ai-fdocs status`
 - `ai-fdocs check [--format text|json]`
 
