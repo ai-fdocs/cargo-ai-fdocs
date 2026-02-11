@@ -10,12 +10,14 @@ export interface PackageConfig {
   ai_notes?: string;
 }
 
+export type DocsSource = "github" | "npm_tarball";
+
 export interface Config {
   settings: {
     output_dir: string;
     prune: boolean;
     max_file_size_kb: number;
-    experimental_npm_tarball: boolean;
+    docs_source: DocsSource;
   };
   packages: Record<string, PackageConfig>;
 }
@@ -31,13 +33,17 @@ export function loadConfig(projectRoot: string): Config {
 
   const settings = (data.settings as Record<string, unknown> | undefined) ?? {};
   const packages = (data.packages as Record<string, PackageConfig> | undefined) ?? {};
+  const docsSourceRaw = settings.docs_source;
+  const docsSource = docsSourceRaw === "github" || docsSourceRaw === "npm_tarball" ? docsSourceRaw : undefined;
+  const hasLegacyExperimental = Object.prototype.hasOwnProperty.call(settings, "experimental_npm_tarball");
+  const legacyExperimental = Boolean(settings.experimental_npm_tarball ?? false);
 
   return {
     settings: {
       output_dir: String(settings.output_dir ?? "docs/ai/vendor-docs/node"),
       prune: Boolean(settings.prune ?? true),
       max_file_size_kb: Number(settings.max_file_size_kb ?? 512),
-      experimental_npm_tarball: Boolean(settings.experimental_npm_tarball ?? false),
+      docs_source: docsSource ?? (hasLegacyExperimental ? (legacyExperimental ? "npm_tarball" : "github") : "npm_tarball"),
     },
     packages,
   };

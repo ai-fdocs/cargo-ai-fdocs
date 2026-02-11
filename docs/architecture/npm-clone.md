@@ -83,9 +83,9 @@ For each configured package:
 4. Download files:
    - `GET https://raw.githubusercontent.com/{repo}/{ref}/{path}`
 
-## 3.3 `sync` in npm tarball mode (experimental)
+## 3.3 `sync` in npm tarball mode
 
-If `settings.experimental_npm_tarball = true`:
+If `settings.docs_source = "npm_tarball"` (default):
 
 1. Resolve package version payload:
    - `GET https://registry.npmjs.org/{package}/{version}`
@@ -100,7 +100,7 @@ If `settings.experimental_npm_tarball = true`:
 ## 4.1 Concurrency
 
 - `sync` uses `p-limit`.
-- Hard cap: `MAX_CONCURRENT = 8` (code constant, not TOML-configurable).
+- Hard cap: `MAX_CONCURRENT = 8` (code constant, aligned with Rust default concurrency).
 
 ## 4.2 Delays/throttling
 
@@ -131,7 +131,7 @@ What it does:
    - `output_dir = "docs/ai/vendor-docs/node"`
    - `prune = true`
    - `max_file_size_kb = 512`
-   - `experimental_npm_tarball = false`
+   - `docs_source = "npm_tarball"`
 
 ## `ai-fdocs sync [--force]`
 
@@ -181,7 +181,7 @@ Additional output:
 - `output_dir` (default `docs/ai/vendor-docs/node`)
 - `prune` (default `true`)
 - `max_file_size_kb` (default `512`)
-- `experimental_npm_tarball` (default `false`)
+- `docs_source` (`npm_tarball` by default, can be `github`)
 
 `[packages.<name>]`:
 
@@ -225,10 +225,10 @@ Additional output:
 - run `node dist/cli.js check`;
 - job fails when docs are stale/missing.
 
-## Experimental tarball workflow
+## Tarball-first workflow
 
-- enable `experimental_npm_tarball = true`;
-- useful when GitHub-based docs retrieval is incomplete or unstable for some packages.
+- keep default `docs_source = "npm_tarball"`;
+- optionally switch to `docs_source = "github"` for repo-first retrieval.
 
 ---
 

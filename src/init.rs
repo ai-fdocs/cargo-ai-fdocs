@@ -57,7 +57,8 @@ pub async fn run_init(config_path: &Path, force: bool) -> Result<()> {
     out.push_str("[settings]\n");
     out.push_str("output_dir = \"docs/ai/vendor-docs/rust\"\n");
     out.push_str("max_file_size_kb = 200\n");
-    out.push_str("prune = true\n\n");
+    out.push_str("prune = true\n");
+    out.push_str("docs_source = \"github\"\n\n");
 
     for (crate_name, repo) in resolved {
         out.push_str(&format!("[crates.{crate_name}]\n"));

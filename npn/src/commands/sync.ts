@@ -167,7 +167,7 @@ export async function cmdSync(projectRoot: string, force: boolean, reportFormat:
   const npmRegistry = new NpmRegistryClient();
   const entries = Object.entries(config.packages);
   const limit = pLimit(MAX_CONCURRENT);
-  const selectedSource: SyncSource = config.settings.experimental_npm_tarball ? "npm_tarball" : "github";
+  const selectedSource: SyncSource = config.settings.docs_source;
 
   const tasks = entries.map(([name, pkgConfig]) =>
     limit(async (): Promise<SyncTaskResult> => {

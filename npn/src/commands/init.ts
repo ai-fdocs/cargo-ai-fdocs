@@ -88,8 +88,8 @@ export async function cmdInit(projectRoot: string, overwrite: boolean): Promise<
   toml += 'output_dir = "docs/ai/vendor-docs/node"\n';
   toml += "prune = true\n";
   toml += "max_file_size_kb = 512\n\n";
-  toml += "# Experimental: if true, sync fetches docs from npm tarballs instead of GitHub.\n";
-  toml += "experimental_npm_tarball = false\n\n";
+  toml += "# Docs source strategy for npm version (github|npm_tarball).\n";
+  toml += "docs_source = \"npm_tarball\"\n\n";
 
   for (const [name, info] of resolved) {
     const key = needsQuoting(name) ? `"${name}"` : name;

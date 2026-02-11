@@ -9,18 +9,18 @@ Node.js/TypeScript version of `ai-fdocs` with core feature parity for Rust v0.2:
 - `config_hash` for automatic cache invalidation;
 - improved `status` with hints.
 
-## Experimental docs source mode
+## Docs source mode
 
-By default, documentation is fetched from a package's GitHub repository.
+By default, documentation is fetched from the npm tarball (`docs_source = "npm_tarball"`).
 
-You can enable an experimental mode that fetches docs from the npm tarball:
+You can explicitly select the source strategy:
 
 ```toml
 [settings]
-experimental_npm_tarball = true
+docs_source = "npm_tarball" # or "github"
 ```
 
-> ⚠️ This is an experimental mode and may behave differently for non-standard packages.
+For backward compatibility, legacy `experimental_npm_tarball` is still accepted.
 
 ## Safety and degraded-source behavior
 

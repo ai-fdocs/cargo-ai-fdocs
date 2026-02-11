@@ -177,6 +177,7 @@ What it does:
 - `max_file_size_kb` (default `200`)
 - `prune` (default `true`)
 - `sync_concurrency` (default `8`, must be > 0)
+- `docs_source` (default `github`)
 
 ## 6.2 Per-crate settings (`[crates.<name>]`)
 

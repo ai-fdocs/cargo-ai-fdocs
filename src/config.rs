@@ -14,6 +14,16 @@ pub struct Config {
     pub crates: HashMap<String, CrateDoc>,
 }
 
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
+pub enum DocsSource {
+    #[serde(rename = "github")]
+    GitHub,
+}
+
+const fn default_docs_source() -> DocsSource {
+    DocsSource::GitHub
+}
+
 #[derive(Debug, Deserialize)]
 pub struct Settings {
     #[serde(default = "default_output_dir")]
@@ -27,6 +37,9 @@ pub struct Settings {
 
     #[serde(default = "default_sync_concurrency")]
     pub sync_concurrency: usize,
+
+    #[serde(default = "default_docs_source")]
+    pub docs_source: DocsSource,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -107,6 +120,7 @@ impl Default for Settings {
             max_file_size_kb: default_max_file_size_kb(),
             prune: default_true(),
             sync_concurrency: default_sync_concurrency(),
+            docs_source: default_docs_source(),
         }
     }
 }
@@ -187,6 +201,33 @@ repo = "serde-rs/serde"
             .contains("settings.sync_concurrency must be greater than 0"));
     }
 
+    #[test]
+    fn config_without_docs_source_uses_github_default() {
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time should be valid")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("ai-fdocs-default-docs-source-{suffix}.toml"));
+
+        fs::write(
+            &path,
+            r#"[settings]
+sync_concurrency = 2
+
+[crates.serde]
+repo = "serde-rs/serde"
+"#,
+        )
+        .expect("must write temporary config");
+
+        let cfg = Config::load(&path).expect("config without docs_source should parse");
+        fs::remove_file(&path).expect("must cleanup temporary config");
+
+        assert!(matches!(
+            cfg.settings.docs_source,
+            super::DocsSource::GitHub
+        ));
+    }
     #[test]
     fn config_without_repo_or_sources_fails_validation() {
         let suffix = SystemTime::now()
