@@ -33,8 +33,39 @@
 - [x] A4. Описать endpoint-контракт (request/response, retry, лимиты, таймауты, коды ошибок) в `docs/API_CONTRACT.md`.
 - [x] A5. Зафиксировать политику свежести (TTL, revalidation, force refresh).
 - [x] A6. Зафиксировать политику деградации (какие ошибки фатальны, какие non-fatal с best-effort).
+- [x] A7. Зафиксировать точный входной URL-шаблон docs.rs для `crate/version`: `https://docs.rs/crate/{crate_name}/{version}`.
+- [x] A8. Зафиксировать формат артефакта latest-docs: canonical `API.md` (Markdown), без сохранения `API.html` как primary output.
+- [x] A9. Зафиксировать обязательные поля `.aifd-meta.toml` для артефакта (format/path/hash/bytes/limit/truncation/docsrs URL).
+- [x] A10. Зафиксировать правила очистки/нормализации контента (удаление nav/boilerplate, нормализация ссылок, сохранение code blocks).
+- [x] A11. Зафиксировать лимиты и truncate policy с детерминированным поведением при превышении размера.
 
 **Критерий завершения этапа A:** есть документированный и согласованный контракт, по которому можно писать код без неопределённостей.
+
+
+## Contract addendum (фиксируемо до кодинга)
+
+- Точный URL-шаблон входа в docs.rs: `https://docs.rs/crate/{crate_name}/{version}` (без query/fragment).
+- Формат выхода: только `API.md` в UTF-8 markdown; HTML допускается только как промежуточный вход для нормализации.
+- Обязательные поля `.aifd-meta.toml` для latest-docs:
+  - `artifact_format = "api_markdown_v1"`
+  - `artifact_path = "API.md"`
+  - `artifact_sha256`, `artifact_bytes`
+  - `max_file_size_kb`, `truncated`, `truncation_marker` (если `truncated=true`)
+  - `docsrs_input_url`, `docsrs_canonical_base_url`
+- Нормализация контента:
+  - удалить nav/sidebar/footer/прочий boilerplate;
+  - переписать относительные ссылки в абсолютные docs.rs-ссылки текущей версии;
+  - сохранить headings/signatures/fenced code blocks без разрыва внутри блока.
+- Лимиты и поведение при overflow:
+  - жёсткий лимит `settings.max_file_size_kb`;
+  - обрезка на границе секции/параграфа, никогда не внутри fenced code block;
+  - добавить `[TRUNCATED: ...]`, выставить `truncated=true`, sync остаётся успешным.
+- Проверяемый DoD (минимум секций в `API.md`):
+  - H1 с `crate + version`;
+  - `Overview`;
+  - `API Reference` (или эквивалент rustdoc index);
+  - минимум один fenced code block;
+  - footer с source-provenance URL docs.rs.
 
 ---
 
@@ -105,9 +136,9 @@
 - [ ] F1. Сменить рекомендуемый root output на `fdocs`.
 - [ ] F2. Сохранить плоскую структуру `crate@version/` (без лишней вложенности).
 - [ ] F3. Для latest-docs сохранять минимум:
-  - `API.md` (или `API.html`),
+  - `API.md` (обязательный канонический артефакт),
   - `_SUMMARY.md`,
-  - `.aifd-meta.toml`.
+  - `.aifd-meta.toml` с обязательными metadata-полями артефакта и `truncated`-флагом.
 - [ ] F4. Обновить `_INDEX.md` генерацию под mixed sources.
 - [ ] F5. Сохранить совместимость с существующими flatten-правилами файлов.
 

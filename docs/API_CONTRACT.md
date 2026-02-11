@@ -55,17 +55,51 @@ This document defines the **implementation contract** for the `latest_docs` sync
 ### Primary endpoint (MVP)
 - `GET https://docs.rs/crate/{crate_name}/{version}`
 
+### Exact input URL template (required)
+- Input URL MUST be built as:
+  - `https://docs.rs/crate/{crate_name}/{version}`
+- `crate_name` and `version` MUST come from the resolved latest version step (crates.io contract in §2.1).
+- `crate_name` and `version` MUST be URL path-safe (`percent-encode` path-segments if needed).
+- Query parameters/fragments are not allowed for the primary fetch URL.
+- Any internal normalization links MUST be anchored to:
+  - `https://docs.rs/{crate_name}/{version}/...`
+
 ### Optional endpoint (future enrichment)
 - `GET https://docs.rs/{crate_name}/{version}/{crate_name}/` (crate root rustdoc page)
 
-### Required output artifact (MVP)
-- `API.md` (single-page normalized snapshot)
+### Required output artifact format (MVP)
+- Canonical artifact name: `API.md`.
+- Canonical format: Markdown UTF-8 text (`text/markdown` logical payload).
+- `API.html` is NOT allowed as primary persisted artifact in MVP.
+- If HTML is fetched upstream, it MUST be normalized and converted to `API.md` before persistence.
 
-### Extraction rules
+### Extraction and normalization rules
 - Keep only main article/rustdoc body section.
-- Remove script/style noise not useful for AI context.
-- Preserve code blocks, signatures, and headings.
-- Rewrite relative links to absolute `https://docs.rs/...` links.
+- Remove navigation/boilerplate noise:
+  - top nav, sidebars, footer, search widgets, theme controls, keyboard-shortcuts hints, "platform" banners.
+- Remove script/style blocks and client-side assets not useful for AI context.
+- Preserve semantic content:
+  - headings (`h1..h6`), paragraphs, lists, tables,
+  - signatures and declaration blocks,
+  - fenced code blocks with language hints where possible.
+- Link policy:
+  - rewrite relative links to absolute `https://docs.rs/{crate_name}/{version}/...` links;
+  - keep absolute `https://docs.rs/...` links as-is;
+  - keep external links but never rewrite them to relative.
+- Code block policy:
+  - preserve original code order;
+  - do not collapse multiple adjacent blocks;
+  - trim only trailing whitespace.
+
+### Content limits and truncation policy
+- `settings.max_file_size_kb` is the hard limit for `API.md` payload size.
+- If normalized content exceeds the limit:
+  1. truncate at a Markdown block boundary (prefer section boundary, fallback to paragraph boundary);
+  2. never cut inside fenced code block or link token;
+  3. append explicit marker:
+     - `[TRUNCATED: original_bytes=<N>, kept_bytes=<M>, max_kb=<K>]`.
+- Truncation MUST be deterministic for identical input.
+- Exceeding limit is non-fatal; sync result remains successful with `truncated=true` metadata flag.
 
 ### Error mapping
 - `404` -> docs for version not built yet (fallback-eligible)
@@ -117,6 +151,15 @@ For each configured crate:
 - `version`
 - `sync_mode` (`lockfile` | `latest_docs`)
 - `source_kind` (`docsrs` | `github_fallback` | `mixed`)
+- `artifact_format` (`api_markdown_v1`)
+- `artifact_path` (`API.md`)
+- `artifact_sha256`
+- `artifact_bytes`
+- `max_file_size_kb`
+- `truncated` (`true` | `false`)
+- `truncation_marker` (present when `truncated=true`)
+- `docsrs_input_url`
+- `docsrs_canonical_base_url`
 - `upstream_latest_version`
 - `upstream_checked_at`
 - `ttl_expires_at`
@@ -191,6 +234,17 @@ For crates.io and docs.rs HTTP calls:
 ## Regression tests
 - existing lockfile mode behavior unchanged.
 - acceptance: run `sync` without `--mode` and assert lockfile flow remains the same.
+
+## Definition of Done (verifiable output minimum)
+
+For each successful `latest_docs` crate sync, `API.md` MUST include at least:
+- one level-1 heading with crate identity (name + version),
+- one "Overview" section,
+- one "API Reference" section (or equivalent rustdoc module/type index heading),
+- at least one preserved fenced code block,
+- source provenance footer with docs.rs URL used for extraction.
+
+If any mandatory section is missing after normalization, output MUST be marked as degraded (`source_kind=github_fallback` or explicit parse-failure reason), and not reported as full docs.rs success.
 
 ---
 

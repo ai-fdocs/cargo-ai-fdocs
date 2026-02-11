@@ -225,6 +225,7 @@ JSON-контракт `status/check --format json`:
 ### После v1.0
 - Расширение экосистемы sibling-проектами (Node/npm и далее).
 - docs.rs как дополнительный источник с приоритетной стратегией merge/fallback.
+- docs.rs latest-docs contract уточнён: входной URL `https://docs.rs/crate/{crate}/{version}`, канонический артефакт только `API.md`, обязательные artifact-метаданные в `.aifd-meta.toml`, детерминированная truncate policy и проверяемый DoD по минимальному набору секций (см. `docs/API_CONTRACT.md`).
 
 ### Consistency rule (cross-language + VS Code)
 - При изменениях core-контракта библиотеки (CLI-команды, JSON-форматы `status/check`, структура output, схема метаданных) необходимо одновременно обновлять:
