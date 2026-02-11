@@ -132,7 +132,7 @@ async function tryFetchFromNpmTarball(
     if (!tarballUrl) {
       return {
         error: {
-          message: `${name}@${version}: no npm tarball URL`,
+          message: "no npm tarball URL",
           code: "NPM_TARBALL_NOT_FOUND",
         },
       };
@@ -142,7 +142,7 @@ async function tryFetchFromNpmTarball(
     return { files: fetched };
   } catch (e) {
     const err = toErrorInfo(e);
-    return { error: { message: `${name}@${version}: ${err.message}`, code: err.code } };
+    return { error: { message: err.message, code: err.code } };
   }
 }
 
@@ -194,7 +194,7 @@ export async function cmdSync(projectRoot: string, force: boolean, reportFormat:
             saved: null,
             status: "error",
             source: selectedSource,
-            message: tarball.error.message,
+            message: `${name}@${version}: ${tarball.error.message}`,
             errorCode: tarball.error.code,
           };
         }
@@ -246,17 +246,22 @@ export async function cmdSync(projectRoot: string, force: boolean, reportFormat:
       }
 
       if (!fetchedFiles || fetchedFiles.length === 0) {
+        let emptyFallbackError: { message: string; code?: string } | null = null;
+
         if (selectedSource === "github") {
           const tarball = await tryFetchFromNpmTarball(npmRegistry, name, version, pkgConfig.subpath, pkgConfig.files);
           if (!("error" in tarball) && tarball.files.length > 0) {
             fetchedFiles = tarball.files;
             taskSource = "npm_tarball";
             resolved = { gitRef: "npm-tarball", isFallback: false };
+          } else if ("error" in tarball) {
+            emptyFallbackError = tarball.error;
           }
         }
 
         if (!fetchedFiles || fetchedFiles.length === 0) {
-          return { saved: null, status: "skipped", source: taskSource, message: `${name}@${version}: no files found` };
+          const details = emptyFallbackError ? `; npm fallback failed (${emptyFallbackError.message})` : "";
+          return { saved: null, status: "skipped", source: taskSource, message: `${name}@${version}: no files found${details}` };
         }
       }
 

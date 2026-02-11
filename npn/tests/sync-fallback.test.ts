@@ -121,4 +121,22 @@ describe("cmdSync github fallback", () => {
     expect(report.issues[0]).toContain("npm fallback failed");
   });
 
+
+  it("reports fallback failure details when GitHub and empty-result fallback both fail", async () => {
+    const root = createFixtureRoot();
+    const logs: string[] = [];
+
+    vi.spyOn(console, "log").mockImplementation((msg?: unknown) => logs.push(String(msg ?? "")));
+    vi.spyOn(GitHubClient.prototype, "resolveRef").mockResolvedValue({ gitRef: "v4.17.21", isFallback: false });
+    vi.spyOn(GitHubClient.prototype, "fetchDefaultFiles").mockResolvedValue([]);
+    vi.spyOn(NpmRegistryClient.prototype, "getTarballUrl").mockResolvedValue(null);
+
+    await cmdSync(root, false, "json");
+
+    const report = JSON.parse(logs.at(-1) ?? "{}");
+    expect(report.totals.skipped).toBe(1);
+    expect(report.issues[0]).toContain("no files found");
+    expect(report.issues[0]).toContain("npm fallback failed (no npm tarball URL)");
+  });
+
 });
