@@ -56,7 +56,8 @@ Core idea: AI gets context for the real dependency versions used by the project,
 ## Reporting
 
 - `src/status.rs`:
-  - builds `Synced / SyncedFallback / Outdated / Missing / Corrupted` statuses.
+  - builds `Synced / SyncedFallback / Outdated / Missing / Corrupted` statuses;
+  - emits machine-readable JSON diagnostics with `mode`, `source_kind`, and `reason_code`.
 - `src/index.rs`:
   - generates global `_INDEX.md`.
 

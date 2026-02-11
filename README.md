@@ -212,6 +212,8 @@ backward compatibility, but new configs should use `repo`.
 
 In CI (`cargo ai-fdocs check`), failures include per-crate reasons; in GitHub Actions they are additionally emitted as `::error` annotations.
 
+`status/check --format json` now includes mode/source diagnostics per crate (`mode`, `source_kind`, `reason_code`) for machine-readable CI handling.
+
 ### CI recipes (GitHub Actions)
 
 #### 1) `check` gate (PR/merge safety)
