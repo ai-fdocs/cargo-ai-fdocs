@@ -34,6 +34,14 @@ export function loadConfig(projectRoot: string): Config {
   const settings = (data.settings as Record<string, unknown> | undefined) ?? {};
   const packages = (data.packages as Record<string, PackageConfig> | undefined) ?? {};
   const docsSourceRaw = settings.docs_source;
+  const hasExplicitDocsSource = Object.prototype.hasOwnProperty.call(settings, "docs_source");
+  if (hasExplicitDocsSource && docsSourceRaw !== "github" && docsSourceRaw !== "npm_tarball") {
+    throw new AiDocsError(
+      `settings.docs_source must be "github" or "npm_tarball", got: ${String(docsSourceRaw)}`,
+      "INVALID_CONFIG"
+    );
+  }
+
   const docsSource = docsSourceRaw === "github" || docsSourceRaw === "npm_tarball" ? docsSourceRaw : undefined;
   const hasLegacyExperimental = Object.prototype.hasOwnProperty.call(settings, "experimental_npm_tarball");
   const legacyExperimental = Boolean(settings.experimental_npm_tarball ?? false);
