@@ -29,7 +29,7 @@ AI-ассистенты (Cursor, Copilot, Claude Code и др.) часто ге�
 - `index` (генерация `_INDEX.md`),
 - `status` (проверка актуальности скачанной документации).
 
-Поддерживается сценарий Rust-экосистемы (папка `docs/ai/vendor-docs/rust`).
+Поддерживается сценарий Rust-экосистемы (папка `fdocs/rust`).
 
 ---
 
@@ -59,7 +59,7 @@ cargo ai-fdocs status
 
 ```toml
 [settings]
-output_dir = "docs/ai/vendor-docs/rust"
+output_dir = "fdocs/rust"
 max_file_size_kb = 200
 prune = true
 sync_concurrency = 8
@@ -100,7 +100,7 @@ Legacy-формат `sources = [{ type = "github", repo = "..." }]` остаёт
    - скачать нужные файлы;
    - обработать CHANGELOG;
    - сохранить файлы и метаданные.
-5. Перегенерировать `docs/ai/vendor-docs/rust/_INDEX.md`.
+5. Перегенерировать `fdocs/rust/_INDEX.md`.
 6. Показать итог (`synced/cached/skipped/errors`).
 
 Важно: ошибки по отдельным крейтам/файлам не валят весь sync целиком — обработка best-effort, чтобы остальная документация продолжала обновляться.
@@ -110,7 +110,7 @@ Legacy-формат `sources = [{ type = "github", repo = "..." }]` остаёт
 ## 6. Выходная структура
 
 ```text
-docs/ai/vendor-docs/rust/
+fdocs/rust/
 ├── _INDEX.md
 ├── axum@0.8.1/
 │   ├── .aifd-meta.toml
@@ -177,7 +177,7 @@ docs/ai/vendor-docs/rust/
 - run: |
     git config user.name "github-actions[bot]"
     git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-    git add docs/ai/vendor-docs/rust ai-fdocs.toml
+    git add fdocs/rust ai-fdocs.toml
     git diff --cached --quiet || git commit -m "chore: refresh ai-fdocs"
 - run: git push
 ```

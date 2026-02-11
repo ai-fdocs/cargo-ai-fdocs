@@ -88,7 +88,7 @@ For each configured crate:
 
 ### Local output
 
-- `docs/ai/vendor-docs/rust/{crate}@{version}/...`
+- `fdocs/rust/{crate}@{version}/...`
 - `.aifd-meta.toml`
 - `_SUMMARY.md`
 - global `_INDEX.md`
@@ -173,7 +173,7 @@ What it does:
 
 ## 6.1 Explicit settings (`[settings]`)
 
-- `output_dir` (default: `docs/ai/vendor-docs`; Rust output is under `rust` subfolder)
+- `output_dir` (default: `fdocs`; Rust output is under `rust` subfolder)
 - `max_file_size_kb` (default `200`)
 - `prune` (default `true`)
 - `sync_concurrency` (default `8`, must be > 0)
@@ -217,7 +217,7 @@ What it does:
 1. `cargo ai-fdocs init`
 2. adjust `ai-fdocs.toml`
 3. `cargo ai-fdocs sync`
-4. optionally add `docs/ai/vendor-docs/** linguist-generated=true` to `.gitattributes`
+4. optionally add `fdocs/** linguist-generated=true` to `.gitattributes`
 
 ## 7.2 CI quality gate
 

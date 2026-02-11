@@ -1,5 +1,5 @@
 [settings]
-output_dir = "docs/ai/vendor-docs/node"
+output_dir = "fdocs/node"
 prune = true
 max_file_size_kb = 512
 experimental_npm_tarball = false

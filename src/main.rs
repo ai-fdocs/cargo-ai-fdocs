@@ -17,7 +17,7 @@ use tokio::sync::Semaphore;
 use clap::{Parser, Subcommand, ValueEnum};
 use tracing::{error, info, warn};
 
-use crate::config::Config;
+use crate::config::{Config, DocsSource};
 use crate::error::AiDocsError;
 use crate::error::{Result, SyncErrorKind};
 use crate::fetcher::github::{FetchedFile, FileRequest, GitHubFetcher};
@@ -150,6 +150,10 @@ async fn run(cli: Cli) -> Result<()> {
 async fn run_sync(config_path: &Path, force: bool) -> Result<()> {
     let config = Config::load(config_path)?;
     info!("Loaded config from {}", config_path.display());
+
+    match config.settings.docs_source {
+        DocsSource::GitHub => info!("Using docs source: github"),
+    }
 
     let cargo_lock_path = PathBuf::from("Cargo.lock");
     let rust_versions = resolver::resolve_cargo_versions(&cargo_lock_path)?;

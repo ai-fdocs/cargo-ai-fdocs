@@ -192,4 +192,69 @@ describe("loadConfig settings validation", () => {
     expect(cfg.settings.docs_source).toBe("github");
   });
 
+  it("fails on non-boolean prune", () => {
+    const root = mkdtempSync(join(tmpdir(), "aifd-config-"));
+    writeFileSync(
+      join(root, "ai-fdocs.toml"),
+      ['[settings]', 'prune = "false"', '', '[packages.lodash]', 'repo = "lodash/lodash"'].join("\n"),
+      "utf-8"
+    );
+
+    const load = () => loadConfig(root);
+    expect(load).toThrowError(AiDocsError);
+    expect(load).toThrowError(/settings\.prune must be a boolean/);
+  });
+
+  it("fails on empty output_dir", () => {
+    const root = mkdtempSync(join(tmpdir(), "aifd-config-"));
+    writeFileSync(
+      join(root, "ai-fdocs.toml"),
+      ['[settings]', 'output_dir = "   "', '', '[packages.lodash]', 'repo = "lodash/lodash"'].join("\n"),
+      "utf-8"
+    );
+
+    const load = () => loadConfig(root);
+    expect(load).toThrowError(AiDocsError);
+    expect(load).toThrowError(/settings\.output_dir must be a non-empty string/);
+  });
+
+  it("fails on invalid package repo", () => {
+    const root = mkdtempSync(join(tmpdir(), "aifd-config-"));
+    writeFileSync(
+      join(root, "ai-fdocs.toml"),
+      ['[packages.lodash]', 'repo = ""'].join("\n"),
+      "utf-8"
+    );
+
+    const load = () => loadConfig(root);
+    expect(load).toThrowError(AiDocsError);
+    expect(load).toThrowError(/packages\.lodash\.repo must be a non-empty string/);
+  });
+
+  it("fails on non-string package files entry", () => {
+    const root = mkdtempSync(join(tmpdir(), "aifd-config-"));
+    writeFileSync(
+      join(root, "ai-fdocs.toml"),
+      ['[packages.lodash]', 'repo = "lodash/lodash"', 'files = ["README.md", 42]'].join("\n"),
+      "utf-8"
+    );
+
+    const load = () => loadConfig(root);
+    expect(load).toThrowError(AiDocsError);
+    expect(load).toThrowError(/packages\.lodash\.files\[1\] must be a non-empty string/);
+  });
+
+  it("fails on non-string ai_notes", () => {
+    const root = mkdtempSync(join(tmpdir(), "aifd-config-"));
+    writeFileSync(
+      join(root, "ai-fdocs.toml"),
+      ['[packages.lodash]', 'repo = "lodash/lodash"', 'ai_notes = 42'].join("\n"),
+      "utf-8"
+    );
+
+    const load = () => loadConfig(root);
+    expect(load).toThrowError(AiDocsError);
+    expect(load).toThrowError(/packages\.lodash\.ai_notes must be a string/);
+  });
+
 });

@@ -55,7 +55,7 @@ pub async fn run_init(config_path: &Path, force: bool) -> Result<()> {
 
     let mut out = String::new();
     out.push_str("[settings]\n");
-    out.push_str("output_dir = \"docs/ai/vendor-docs/rust\"\n");
+    out.push_str("output_dir = \"fdocs/rust\"\n");
     out.push_str("max_file_size_kb = 200\n");
     out.push_str("prune = true\n");
     out.push_str("docs_source = \"github\"\n\n");

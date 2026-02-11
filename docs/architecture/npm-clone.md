@@ -128,7 +128,7 @@ What it does:
 3. Filters known low-signal packages (for example `typescript`, `eslint`, `@types/*`, etc.).
 4. Queries npm registry metadata.
 5. Generates `ai-fdocs.toml` with defaults:
-   - `output_dir = "docs/ai/vendor-docs/node"`
+   - `output_dir = "fdocs/node"`
    - `prune = true`
    - `max_file_size_kb = 512`
    - `sync_concurrency = 8`
@@ -179,7 +179,7 @@ Additional output:
 
 `[settings]`:
 
-- `output_dir` (default `docs/ai/vendor-docs/node`)
+- `output_dir` (default `fdocs/node`)
 - `prune` (default `true`)
 - `max_file_size_kb` (default `512`, must be > 0)
 - `sync_concurrency` (default `8`, must be > 0)

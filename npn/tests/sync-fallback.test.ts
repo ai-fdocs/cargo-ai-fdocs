@@ -14,7 +14,7 @@ function createFixtureRoot(): string {
     join(root, "ai-fdocs.toml"),
     [
       "[settings]",
-      'output_dir = "docs/ai/vendor-docs/node"',
+      'output_dir = "fdocs/node"',
       "prune = false",
       'docs_source = "github"',
       "",
@@ -37,7 +37,7 @@ function createFixtureRoot(): string {
     "utf-8"
   );
 
-  mkdirSync(join(root, "docs/ai/vendor-docs/node"), { recursive: true });
+  mkdirSync(join(root, "fdocs/node"), { recursive: true });
   return root;
 }
 
@@ -47,7 +47,7 @@ function createMultiFixtureRoot(): string {
     join(root, "ai-fdocs.toml"),
     [
       "[settings]",
-      'output_dir = "docs/ai/vendor-docs/node"',
+      'output_dir = "fdocs/node"',
       "prune = false",
       'docs_source = "github"',
       "",
@@ -74,7 +74,7 @@ function createMultiFixtureRoot(): string {
     "utf-8"
   );
 
-  mkdirSync(join(root, "docs/ai/vendor-docs/node"), { recursive: true });
+  mkdirSync(join(root, "fdocs/node"), { recursive: true });
   return root;
 }
 
@@ -102,7 +102,7 @@ describe("cmdSync github fallback", () => {
     expect(report.sourceStats.github.synced).toBe(0);
 
     const meta = readFileSync(
-      join(root, "docs/ai/vendor-docs/node/lodash@4.17.21/.aifd-meta.toml"),
+      join(root, "fdocs/node/lodash@4.17.21/.aifd-meta.toml"),
       "utf-8"
     );
     expect(meta).toContain('git_ref = "npm-tarball"');
@@ -203,7 +203,7 @@ describe("cmdSync github fallback", () => {
     expect(report.totals.errors).toBe(1);
     expect(report.errorCodes).toEqual({ GITHUB_RATE_LIMIT: 1 });
 
-    const index = readFileSync(join(root, "docs/ai/vendor-docs/node/_INDEX.md"), "utf-8");
+    const index = readFileSync(join(root, "fdocs/node/_INDEX.md"), "utf-8");
     expect(index).toContain("[axios@1.7.0](axios@1.7.0/_SUMMARY.md)");
     expect(index).not.toContain("lodash@4.17.21");
   });

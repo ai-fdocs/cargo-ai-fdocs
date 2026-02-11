@@ -97,7 +97,7 @@ function createConfig(packages: BenchmarkPackage[], docsSource: DocsSource): str
     .map((pkg) => `[packages."${pkg.name}"]\nrepo = "${pkg.repo}"\n`)
     .join("\n");
 
-  return `[settings]\noutput_dir = "docs/ai/vendor-docs/node"\nprune = true\nmax_file_size_kb = 512\nsync_concurrency = 6\ndocs_source = "${docsSource}"\n\n${pkgLines}`;
+  return `[settings]\noutput_dir = "fdocs/node"\nprune = true\nmax_file_size_kb = 512\nsync_concurrency = 6\ndocs_source = "${docsSource}"\n\n${pkgLines}`;
 }
 
 function countUsefulFiles(outputDir: string): number {
@@ -151,7 +151,7 @@ function runMode(rootDir: string, mode: DocsSource): ModeResult {
   }
 
   const report = parseJsonFromStdout(syncResult.stdout);
-  const usefulFiles = countUsefulFiles(join(runDir, "docs/ai/vendor-docs/node"));
+  const usefulFiles = countUsefulFiles(join(runDir, "fdocs/node"));
 
   return { mode, durationMs, report, usefulFiles };
 }

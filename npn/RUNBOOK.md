@@ -76,7 +76,7 @@ Operational consequence of the new default: teams can remove mandatory GitHub to
 To keep generated docs out of language stats/diff noise:
 
 ```gitattributes
-docs/ai/vendor-docs/node/** linguist-generated=true
+fdocs/node/** linguist-generated=true
 ```
 
 ## 5) Minimal CI recipe (copy/paste)

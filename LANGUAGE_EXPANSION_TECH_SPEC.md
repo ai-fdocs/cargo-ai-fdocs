@@ -33,7 +33,7 @@
 Для каждой экосистемы сохраняем docs в:
 
 ```text
-docs/ai/vendor-docs/<ecosystem>/
+fdocs/<ecosystem>/
 ├── _INDEX.md
 ├── <package>@<version>/
 │   ├── .aifd-meta.toml
@@ -212,7 +212,7 @@ docs/ai/vendor-docs/<ecosystem>/
 
 ```toml
 [settings]
-output_dir = "docs/ai/vendor-docs/python"
+output_dir = "fdocs/python"
 max_file_size_kb = 200
 prune = true
 sync_concurrency = 8

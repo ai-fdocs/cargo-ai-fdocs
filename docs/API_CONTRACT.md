@@ -181,7 +181,7 @@ For crates.io and docs.rs HTTP calls:
 ## 9) Storage layout (target)
 
 ```text
-docs/fdocs/
+fdocs/
 ├── _INDEX.md
 ├── serde@1.0.228/
 │   ├── .aifd-meta.toml

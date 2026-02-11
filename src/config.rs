@@ -113,7 +113,7 @@ impl CrateDoc {
 }
 
 fn default_output_dir() -> PathBuf {
-    PathBuf::from("docs/ai/vendor-docs")
+    PathBuf::from("fdocs")
 }
 
 const fn default_max_file_size_kb() -> usize {

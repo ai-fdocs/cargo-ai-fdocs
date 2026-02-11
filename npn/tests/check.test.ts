@@ -12,7 +12,7 @@ describe("check report", () => {
       join(root, "ai-fdocs.toml"),
       [
         "[settings]",
-        'output_dir = "docs/ai/vendor-docs/node"',
+        'output_dir = "fdocs/node"',
         "",
         "[packages.lodash]",
         'repo = "lodash/lodash"',
@@ -33,7 +33,7 @@ describe("check report", () => {
       "utf-8"
     );
 
-    mkdirSync(join(root, "docs/ai/vendor-docs/node"), { recursive: true });
+    mkdirSync(join(root, "fdocs/node"), { recursive: true });
 
     const report = buildCheckReport(root);
 
