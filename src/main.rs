@@ -14,6 +14,7 @@ use std::sync::Arc;
 
 use tokio::sync::Semaphore;
 
+use chrono::{NaiveDate, Utc};
 use clap::{Parser, Subcommand, ValueEnum};
 use tracing::{error, info, warn};
 
@@ -321,6 +322,7 @@ async fn run_sync_latest_docs(config: Config, force: bool) -> Result<()> {
                 crate_doc,
                 force,
                 max_file_size_kb,
+                config.settings.latest_ttl_hours,
             )
             .await
         });
@@ -368,6 +370,7 @@ async fn sync_one_crate_latest(
     crate_doc: crate::config::CrateDoc,
     force: bool,
     max_file_size_kb: usize,
+    latest_ttl_hours: usize,
 ) -> SyncOutcome {
     let version = match latest_fetcher.resolve_latest_version(&crate_name).await {
         Ok(v) => v,
@@ -378,9 +381,15 @@ async fn sync_one_crate_latest(
     };
 
     if !force && storage::is_cached(&rust_output_dir, &crate_name, &version, &crate_doc) {
-        info!("  ⏭ {crate_name}@{version}: cached, skipping");
-        let cached = storage::read_cached_info(&rust_output_dir, &crate_name, &version, &crate_doc);
-        return SyncOutcome::Cached(cached);
+        if let Some(meta) = storage::read_meta(&rust_output_dir, &crate_name, &version) {
+            if is_latest_cache_fresh(&meta.fetched_at, latest_ttl_hours) {
+                info!("  ⏭ {crate_name}@{version}: cached (TTL valid), skipping");
+                let cached =
+                    storage::read_cached_info(&rust_output_dir, &crate_name, &version, &crate_doc);
+                return SyncOutcome::Cached(cached);
+            }
+            info!("  🔄 {crate_name}@{version}: cache TTL expired, refreshing");
+        }
     }
 
     match latest_fetcher
@@ -599,6 +608,20 @@ fn resolve_sync_mode(mode_override: Option<SyncModeArg>, configured_mode: SyncMo
         .unwrap_or(configured_mode)
 }
 
+fn is_latest_cache_fresh(fetched_at: &str, latest_ttl_hours: usize) -> bool {
+    let Ok(date) = NaiveDate::parse_from_str(fetched_at, "%Y-%m-%d") else {
+        return false;
+    };
+
+    let Some(fetched_dt) = date.and_hms_opt(0, 0, 0) else {
+        return false;
+    };
+
+    let now = Utc::now().naive_utc();
+    let age = now - fetched_dt;
+    age.num_hours() < latest_ttl_hours as i64
+}
+
 const fn should_emit_plain_check_errors(format: OutputFormat, github_actions: bool) -> bool {
     !github_actions && matches!(format, OutputFormat::Table)
 }
@@ -710,12 +733,21 @@ fn run_check(
 #[cfg(test)]
 mod tests {
     use super::{
-        build_requests, collect_fetched_files, resolve_sync_mode, should_emit_plain_check_errors,
-        OutputFormat, SyncMode, SyncModeArg,
+        build_requests, collect_fetched_files, is_latest_cache_fresh, resolve_sync_mode,
+        should_emit_plain_check_errors, OutputFormat, SyncMode, SyncModeArg,
     };
     use crate::error::AiDocsError;
     use crate::fetcher::github::FetchedFile;
     use clap::{CommandFactory, Parser};
+
+    #[test]
+    fn latest_cache_freshness_respects_ttl_hours() {
+        let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+        assert!(is_latest_cache_fresh(&today, 24));
+
+        assert!(!is_latest_cache_fresh("1970-01-01", 24));
+        assert!(!is_latest_cache_fresh("invalid-date", 24));
+    }
 
     #[test]
     fn emits_plain_errors_only_for_table_outside_gha() {

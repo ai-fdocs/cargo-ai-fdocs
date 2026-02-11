@@ -342,6 +342,12 @@ pub struct SaveContext<'a> {
     pub truncated: Option<bool>,
 }
 
+pub fn read_meta(output_dir: &Path, crate_name: &str, version: &str) -> Option<CrateMeta> {
+    let crate_dir = output_dir.join(format!("{crate_name}@{version}"));
+    let meta_path = crate_dir.join(".aifd-meta.toml");
+    load_meta_with_migration(&meta_path)
+}
+
 pub fn read_cached_info(
     output_dir: &Path,
     crate_name: &str,

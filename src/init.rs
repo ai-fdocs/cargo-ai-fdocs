@@ -59,7 +59,9 @@ pub async fn run_init(config_path: &Path, force: bool) -> Result<()> {
     out.push_str("max_file_size_kb = 200\n");
     out.push_str("prune = true\n");
     out.push_str("docs_source = \"github\"\n");
-    out.push_str("sync_mode = \"lockfile\"\n\n");
+    out.push_str("sync_mode = \"lockfile\"\n");
+    out.push_str("latest_ttl_hours = 24\n");
+    out.push_str("docsrs_single_page = true\n\n");
 
     for (crate_name, repo) in resolved {
         out.push_str(&format!("[crates.{crate_name}]\n"));

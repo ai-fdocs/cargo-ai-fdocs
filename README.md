@@ -127,6 +127,8 @@ prune = true
 sync_concurrency = 8
 docs_source = "github"
 sync_mode = "lockfile"
+latest_ttl_hours = 24
+docsrs_single_page = true
 
 [crates.axum]
 repo = "tokio-rs/axum"

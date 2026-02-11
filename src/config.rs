@@ -93,6 +93,12 @@ pub struct Settings {
 
     #[serde(default = "default_sync_mode")]
     pub sync_mode: SyncMode,
+
+    #[serde(default = "default_latest_ttl_hours")]
+    pub latest_ttl_hours: usize,
+
+    #[serde(default = "default_true")]
+    pub docsrs_single_page: bool,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -166,6 +172,10 @@ const fn default_sync_concurrency() -> usize {
     8
 }
 
+const fn default_latest_ttl_hours() -> usize {
+    24
+}
+
 impl Default for Settings {
     fn default() -> Self {
         Self {
@@ -175,6 +185,8 @@ impl Default for Settings {
             sync_concurrency: default_sync_concurrency(),
             docs_source: default_docs_source(),
             sync_mode: default_sync_mode(),
+            latest_ttl_hours: default_latest_ttl_hours(),
+            docsrs_single_page: default_true(),
         }
     }
 }
@@ -201,6 +213,12 @@ impl Config {
         if self.settings.max_file_size_kb == 0 {
             return Err(AiDocsError::InvalidConfig(
                 "settings.max_file_size_kb must be greater than 0".to_string(),
+            ));
+        }
+
+        if self.settings.latest_ttl_hours == 0 {
+            return Err(AiDocsError::InvalidConfig(
+                "settings.latest_ttl_hours must be greater than 0".to_string(),
             ));
         }
 
@@ -259,6 +277,8 @@ repo = "serde-rs/serde"
         fs::remove_file(&path).expect("must cleanup temporary config");
 
         assert_eq!(config.settings.sync_mode, SyncMode::Lockfile);
+        assert_eq!(config.settings.latest_ttl_hours, 24);
+        assert!(config.settings.docsrs_single_page);
     }
 
     #[test]
@@ -486,5 +506,32 @@ repo = "serde-rs/serde"
         fs::remove_file(&path).expect("must cleanup temporary config");
 
         assert_eq!(cfg.settings.sync_mode, SyncMode::LatestDocs);
+    }
+
+    #[test]
+    fn config_with_zero_latest_ttl_hours_fails_validation() {
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time should be valid")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("ai-fdocs-invalid-latest-ttl-{suffix}.toml"));
+
+        fs::write(
+            &path,
+            r#"[settings]
+latest_ttl_hours = 0
+
+[crates.serde]
+repo = "serde-rs/serde"
+"#,
+        )
+        .expect("must write temporary config");
+
+        let err = Config::load(&path).expect_err("zero latest_ttl_hours must fail");
+        fs::remove_file(&path).expect("must cleanup temporary config");
+
+        assert!(err
+            .to_string()
+            .contains("settings.latest_ttl_hours must be greater than 0"));
     }
 }

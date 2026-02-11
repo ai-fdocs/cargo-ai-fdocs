@@ -4,6 +4,8 @@ max_file_size_kb = 200
 prune = true
 docs_source = "github"
 sync_mode = "lockfile"
+latest_ttl_hours = 24
+docsrs_single_page = true
 
 [crates.serde]
 repo = "serde-rs/serde"
