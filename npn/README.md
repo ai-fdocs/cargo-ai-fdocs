@@ -77,6 +77,28 @@ node dist/cli.js --help
 - `ai-fdocs status`
 - `ai-fdocs check [--format text|json]`
 
+## Stable CLI contract and SemVer policy
+
+`npm-ai-fdocs` treats CLI behavior as a public contract for automation and CI.
+
+Stable contract includes:
+
+- command names and top-level flags (`init`, `sync`, `status`, `check`);
+- machine-readable formats intended for CI (`check --format json`, `sync --report-format json`);
+- exit code semantics for `check` (0/1);
+- metadata compatibility guarantees documented for releases.
+
+SemVer policy:
+
+- **Patch (`x.y.Z`)**: bug fixes and non-breaking internal/docs updates.
+- **Minor (`x.Y.z`)**: backward-compatible features and new optional flags.
+- **Major (`X.y.z`)**: breaking CLI/output/metadata changes or compatibility drops.
+
+Compatibility matrix and release process are documented in:
+
+- [`COMPATIBILITY.md`](./COMPATIBILITY.md)
+- [`RELEASING.md`](./RELEASING.md)
+
 ## Roadmap
 
 Detailed roadmap: [`ROADMAP.md`](./ROADMAP.md).
