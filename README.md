@@ -105,6 +105,7 @@ output_dir = "docs/ai/vendor-docs/rust"
 max_file_size_kb = 200
 prune = true
 sync_concurrency = 8
+docs_source = "github"
 
 [crates.axum]
 repo = "tokio-rs/axum"
@@ -157,6 +158,7 @@ docs/ai/vendor-docs/rust/
   - `max_file_size_kb` (default: `200`)
   - `prune` (default: `true`)
   - `sync_concurrency` (default: `8`)
+  - `docs_source` (default: `"github"`)
 
 - `[crates.<name>]`
   - `repo` (recommended, `owner/repo`)

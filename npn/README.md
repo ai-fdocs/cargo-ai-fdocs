@@ -3,24 +3,24 @@
 Node.js/TypeScript version of `ai-fdocs` with core feature parity for Rust v0.2:
 
 - `init` from `package.json` (direct dependencies) + npm registry;
-- `sync` with parallel downloads (`MAX_CONCURRENT=8`);
+- `sync` with parallel downloads (`settings.sync_concurrency`, default `8`, must be > 0);
 - `check` for CI (exit code 0/1);
 - `_SUMMARY.md` in each package folder;
 - `config_hash` for automatic cache invalidation;
 - improved `status` with hints.
 
-## Experimental docs source mode
+## Docs source mode
 
-By default, documentation is fetched from a package's GitHub repository.
+By default, documentation is fetched from the npm tarball (`docs_source = "npm_tarball"`).
 
-You can enable an experimental mode that fetches docs from the npm tarball:
+You can explicitly select the source strategy:
 
 ```toml
 [settings]
-experimental_npm_tarball = true
+docs_source = "npm_tarball" # or "github"
 ```
 
-> ⚠️ This is an experimental mode and may behave differently for non-standard packages.
+For backward compatibility, legacy `experimental_npm_tarball` is still accepted.
 
 ## Safety and degraded-source behavior
 

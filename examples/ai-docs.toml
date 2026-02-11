@@ -2,6 +2,7 @@
 output_dir = "docs/ai/vendor-docs/rust"
 max_file_size_kb = 200
 prune = true
+docs_source = "github"
 
 [crates.serde]
 repo = "serde-rs/serde"

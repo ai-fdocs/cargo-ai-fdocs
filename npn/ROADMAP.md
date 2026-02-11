@@ -35,6 +35,13 @@
 - [x] C1.2 Добавлен machine-readable отчёт `sync --report-format json`.
 - [x] C1.3 JSON-режим `sync` очищен до строгого JSON вывода (без лишних логов).
 - [x] A1 (доп.) Добавлен short error summary по code-классам в `sync`.
+- [x] A3 (доп.) Добавлены unit-тесты для `resolveRef` fallback и рендеринга `_SUMMARY.md`/`_INDEX.md`.
+- [x] C1 (доп.) Реализован fallback с GitHub на npm tarball в `sync` при ошибках/пустой выборке GitHub.
+- [x] A3 (доп.2) Добавлены unit-тесты `cmdSync` для GitHub→npm tarball fallback сценариев.
+- [x] A3 (доп.3) Добавлены unit-тесты для ветки `GitHub fetch error -> npm fallback error` и проверки error-reporting.
+- [x] A3 (доп.4) Добавлен тест для skip-ветки с пустым GitHub-результатом и диагностикой падения npm fallback.
+- [x] A3 (доп.5) Добавлен unit-тест partial failures (best-effort): один пакет падает, остальные успешно синкаются.
+- [x] A3 (доп.6) Добавлен тест на отсутствие повторного npm fallback-запроса после уже выполненного fallback с пустым результатом.
 
 ---
 
