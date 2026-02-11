@@ -17,7 +17,7 @@ use tokio::sync::Semaphore;
 use clap::{Parser, Subcommand, ValueEnum};
 use tracing::{error, info, warn};
 
-use crate::config::{Config, DocsSource};
+use crate::config::{Config, DocsSource, SyncMode};
 use crate::error::AiDocsError;
 use crate::error::{Result, SyncErrorKind};
 use crate::fetcher::github::{FetchedFile, FileRequest, GitHubFetcher};
@@ -40,6 +40,9 @@ enum Commands {
     Sync {
         #[arg(short, long, default_value = DEFAULT_CONFIG_PATH)]
         config: PathBuf,
+        /// Sync mode override (`lockfile` is stable default, `latest-docs` is beta).
+        #[arg(long, value_enum)]
+        mode: Option<SyncModeArg>,
         /// Ignore local cache and re-fetch configured docs.
         #[arg(long, default_value_t = false)]
         force: bool,
@@ -68,6 +71,21 @@ enum Commands {
         #[arg(long, default_value_t = false)]
         force: bool,
     },
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
+enum SyncModeArg {
+    Lockfile,
+    LatestDocs,
+}
+
+impl SyncModeArg {
+    const fn to_sync_mode(self) -> SyncMode {
+        match self {
+            Self::Lockfile => SyncMode::Lockfile,
+            Self::LatestDocs => SyncMode::LatestDocs,
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
@@ -140,16 +158,33 @@ async fn main() {
 
 async fn run(cli: Cli) -> Result<()> {
     match cli.command {
-        Commands::Sync { config, force } => run_sync(&config, force).await,
+        Commands::Sync {
+            config,
+            mode,
+            force,
+        } => run_sync(&config, mode, force).await,
         Commands::Status { config, format } => run_status(&config, format),
         Commands::Check { config, format } => run_check(&config, format),
         Commands::Init { config, force } => run_init_command(&config, force).await,
     }
 }
 
-async fn run_sync(config_path: &Path, force: bool) -> Result<()> {
+async fn run_sync(
+    config_path: &Path,
+    mode_override: Option<SyncModeArg>,
+    force: bool,
+) -> Result<()> {
     let config = Config::load(config_path)?;
     info!("Loaded config from {}", config_path.display());
+
+    let sync_mode = resolve_sync_mode(mode_override, config.settings.sync_mode);
+    info!("Resolved sync mode: {}", sync_mode.as_str());
+    if matches!(sync_mode, SyncMode::LatestDocs) {
+        return Err(error::AiDocsError::Other(
+            "sync mode 'latest_docs' is beta and not implemented yet; keep default lockfile mode"
+                .to_string(),
+        ));
+    }
 
     match config.settings.docs_source {
         DocsSource::GitHub => info!("Using docs source: github"),
@@ -401,6 +436,12 @@ fn build_requests(subpath: Option<&str>, explicit_files: Option<Vec<String>>) ->
     ]
 }
 
+fn resolve_sync_mode(mode_override: Option<SyncModeArg>, configured_mode: SyncMode) -> SyncMode {
+    mode_override
+        .map(SyncModeArg::to_sync_mode)
+        .unwrap_or(configured_mode)
+}
+
 const fn should_emit_plain_check_errors(format: OutputFormat, github_actions: bool) -> bool {
     !github_actions && matches!(format, OutputFormat::Table)
 }
@@ -487,11 +528,12 @@ fn run_check(config_path: &Path, format: OutputFormat) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_requests, collect_fetched_files, should_emit_plain_check_errors, OutputFormat,
+        build_requests, collect_fetched_files, resolve_sync_mode, should_emit_plain_check_errors,
+        OutputFormat, SyncMode, SyncModeArg,
     };
     use crate::error::AiDocsError;
     use crate::fetcher::github::FetchedFile;
-    use clap::CommandFactory;
+    use clap::{CommandFactory, Parser};
 
     #[test]
     fn emits_plain_errors_only_for_table_outside_gha() {
@@ -554,6 +596,30 @@ mod tests {
         let kept = collect_fetched_files(results, "demo", "1.0.0");
         assert!(kept.files.is_empty());
         assert_eq!(kept.non_optional_errors, 0);
+    }
+
+    #[test]
+    fn resolve_sync_mode_prefers_cli_override() {
+        let mode = resolve_sync_mode(Some(SyncModeArg::LatestDocs), SyncMode::Lockfile);
+        assert_eq!(mode, SyncMode::LatestDocs);
+    }
+
+    #[test]
+    fn resolve_sync_mode_uses_settings_when_cli_not_set() {
+        let mode = resolve_sync_mode(None, SyncMode::Lockfile);
+        assert_eq!(mode, SyncMode::Lockfile);
+    }
+
+    #[test]
+    fn sync_mode_defaults_to_lockfile_when_flag_not_provided() {
+        let cli = super::Cli::parse_from(["ai-fdocs", "sync"]);
+        let super::Commands::Sync { mode, .. } = cli.command else {
+            panic!("expected sync command");
+        };
+
+        assert!(mode.is_none(), "sync --mode should be optional");
+        let resolved = resolve_sync_mode(mode, SyncMode::Lockfile);
+        assert_eq!(resolved, SyncMode::Lockfile);
     }
 
     #[test]
