@@ -47,8 +47,13 @@ node dist/cli.js --help
 - `ai-fdocs init [--overwrite]`
 - `ai-fdocs sync [--force]`
 - `ai-fdocs status`
-- `ai-fdocs check`
+- `ai-fdocs check [--format text|json]`
 
 ## Roadmap
 
 Detailed roadmap: [`ROADMAP.md`](./ROADMAP.md).
+
+
+## Runbook
+
+Operational troubleshooting and CI guidance: [`RUNBOOK.md`](./RUNBOOK.md).

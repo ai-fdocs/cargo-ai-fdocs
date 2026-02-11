@@ -14,6 +14,7 @@ import type { Config, PackageConfig } from "./config.js";
 import type { ResolvedRef, FetchedFile } from "./fetcher.js";
 
 export interface CrateMeta {
+  schema_version: number;
   version: string;
   git_ref: string;
   fetched_at: string;
@@ -83,7 +84,10 @@ function parseMetaToml(raw: string): CrateMeta {
   const get = (key: string): string | undefined => raw.match(new RegExp(`${key}\\s*=\\s*"([^"]*)"`))?.[1];
   const getBool = (key: string): boolean => raw.match(new RegExp(`${key}\\s*=\\s*(true|false)`))?.[1] === "true";
 
+  const schemaVersionRaw = raw.match(/schema_version\s*=\s*(\d+)/)?.[1];
+
   return {
+    schema_version: schemaVersionRaw ? Number(schemaVersionRaw) : 1,
     version: get("version") ?? "",
     git_ref: get("git_ref") ?? "",
     fetched_at: get("fetched_at") ?? "",
@@ -124,6 +128,7 @@ export function savePackageFiles(
 
   const date = new Date().toISOString().split("T")[0];
   const meta = [
+    "schema_version = 2",
     `version = "${version}"`,
     `git_ref = "${resolved.gitRef}"`,
     `fetched_at = "${date}"`,
