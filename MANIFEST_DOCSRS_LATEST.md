@@ -113,6 +113,14 @@
 
 **Критерий завершения этапа F:** структура простая (`fdocs/*`) и совместима с текущими механизмами хранения.
 
+**Текущий фактический статус F1 (проверено по коду и документации):**
+- В документации уже есть целевая рекомендация `docs/fdocs` (README + API contract).
+- В текущей реализации дефолты всё ещё указывают на legacy-пути `docs/ai/vendor-docs*`:
+  - Rust: `src/config.rs` (`docs/ai/vendor-docs`) + `src/storage.rs` добавляет подпапку `rust`;
+  - Node: `npn/src/config.ts` (`docs/ai/vendor-docs/node`).
+- Вывод: **F1 пока не закрыт как completed по состоянию кода**, несмотря на обновлённую рекомендацию в части документации.
+- Заметка для следующих PR: переход рекомендации на `docs/fdocs` **already landed in previous PR**, здесь важно не дублировать сделанную doc-часть и сфокусироваться на runtime/defaults/migration.
+
 ---
 
 ## Этап G — Тесты (обязательный блок)
@@ -199,6 +207,23 @@ fdocs/
     └── CHANGELOG.md    # если получен через fallback/repo files
 ```
 
+## 4.2) Текущая фактическая структура vs mixed-source target
+
+### Фактическая структура сейчас
+
+- Rust runtime-файлы пишутся в `settings.output_dir` с автодобавлением `rust/`, если базовый путь не оканчивается на `rust`.
+  - При дефолтах это эквивалентно `docs/ai/vendor-docs/rust/...`.
+- Node runtime-файлы пишутся в `settings.output_dir`, дефолт: `docs/ai/vendor-docs/node/...`.
+
+Итого фактическая модель сейчас: `docs/ai/vendor-docs/{rust,node}/...`.
+
+### Как это соотносится с target для latest-docs
+
+- Target в этом манифесте: единый root `docs/fdocs/` и плоские папки `crate@version/` для Rust latest-docs артефактов.
+- Для mixed-source это означает, что `docs/fdocs/rust` и `docs/fdocs/node` могут использоваться как экосистемные корни,
+  а внутри каждого корня сохраняется одинаковый паттерн хранения (`name@version`, `_SUMMARY.md`, `.aifd-meta.toml`, source-specific файлы).
+- До выравнивания runtime-дефолтов в коде фактическая структура остаётся legacy и не должна считаться завершением этапа F.
+
 ---
 
 ## 4.1) Virtual acceptance walkthrough (nothing missed)
@@ -218,5 +243,7 @@ fdocs/
 - [x] Создан отдельный манифест интеграции latest-docs.
 - [x] Зафиксированы этапы A-I с критериями завершения.
 - [x] Добавлены чек-листы по логике, тестам, документации, релизному контролю.
-- [ ] Начата кодовая реализация (следующий PR).
-
+- [x] Зафиксировано расхождение между doc-рекомендацией (`docs/fdocs`) и runtime-дефолтами (`docs/ai/vendor-docs*`) в Rust/Node конфигах.
+- [x] Уточнена фактическая структура (`.../rust`, `.../node`) и связь с целевой mixed-source структурой latest-docs.
+- [x] Добавлена пометка, что часть по рекомендации пути уже внесена ранее (**already landed in previous PR**) для предотвращения дублирования.
+- [ ] Начата кодовая реализация latest-docs runtime (sync/status/check/storage).
