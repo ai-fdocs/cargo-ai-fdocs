@@ -82,7 +82,9 @@ cargo ai-fdocs sync --force
 cargo ai-fdocs status
 cargo ai-fdocs status --format json
 cargo ai-fdocs check
+cargo ai-fdocs check --mode latest-docs
 cargo ai-fdocs check --format json
+cargo ai-fdocs status --mode latest-docs
 cargo ai-fdocs init
 ```
 
@@ -193,6 +195,9 @@ fdocs/rust/
   - `prune` (default: `true`)
   - `sync_concurrency` (default: `8`)
   - `docs_source` (default: `"github"`)
+  - `sync_mode` (default: `"lockfile"`, also supports `"latest_docs"` / `"latest-docs"`)
+  - `latest_ttl_hours` (default: `24`, used in `latest_docs` mode)
+  - `docsrs_single_page` (default: `true`, latest-docs parser strategy flag)
 
 - `[crates.<name>]`
   - `repo` (recommended, `owner/repo`)

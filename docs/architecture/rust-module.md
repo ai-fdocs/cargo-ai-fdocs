@@ -38,6 +38,14 @@ Core idea: AI gets context for the real dependency versions used by the project,
   - applies retries/timeouts;
   - classifies errors (auth/rate-limit/network/not-found).
 
+## Network fetcher (latest-docs)
+
+- `src/fetcher/latest.rs`:
+  - resolves latest crate version via crates.io;
+  - fetches docs snapshot from docs.rs (`/crate/{name}/{version}`);
+  - applies retries/backoff for `429`/`5xx`/network failures;
+  - classifies fallback-eligible errors for GitHub degraded mode.
+
 ## Storage and cache
 
 - `src/storage.rs`:
@@ -133,37 +141,33 @@ Limitations:
 - Non-GitHub or non-parsable repositories are skipped.
 - If config exists, `--force` is required to overwrite.
 
-## `cargo ai-fdocs sync [--force]`
+## `cargo ai-fdocs sync [--force] [--mode lockfile|latest-docs]`
 
 What it does:
 
-1. Loads config and lockfile.
-2. If `prune = true`, removes outdated folders.
-3. For each crate:
-   - skips if crate is missing in `Cargo.lock`;
-   - skips via cache if config fingerprint matches (`--force` bypasses cache);
-   - resolves git ref;
-   - fetches docs files;
-   - keeps best-effort behavior on partial failures (saves what was fetched);
-   - reports crate error if nothing was fetched.
-4. Regenerates global `_INDEX.md`.
-5. Prints aggregate stats (synced/cached/skipped/errors + error-type breakdown).
+1. Resolves mode (`--mode` overrides `settings.sync_mode`).
+2. In `lockfile` mode: loads lockfile versions and runs GitHub file sync.
+3. In `latest-docs` mode: resolves latest versions via crates.io, fetches docs.rs artifacts, applies TTL cache checks, and falls back to GitHub when eligible.
+4. If `prune = true`, removes outdated folders in lockfile mode.
+5. Regenerates global `_INDEX.md`.
+6. Prints aggregate stats (synced/cached/skipped/errors + error-type breakdown).
 
-## `cargo ai-fdocs status [--format table|json]`
+## `cargo ai-fdocs status [--mode lockfile|latest-docs] [--format table|json]`
 
 What it does:
 
-- Compares config + lock versions + stored metadata.
+- In `lockfile` mode: compares config + lock versions + stored metadata.
+- In `latest-docs` mode: inspects latest artifacts and metadata (without lockfile coupling).
 - Prints per-crate status.
 - Formats:
   - `table` (default),
   - `json`.
 
-## `cargo ai-fdocs check [--format table|json]`
+## `cargo ai-fdocs check [--mode lockfile|latest-docs] [--format table|json]`
 
 What it does:
 
-- Runs the same diagnostics as `status`.
+- Runs the same diagnostics as `status` for the resolved mode.
 - If issues exist (`Outdated/Missing/Corrupted`) returns non-zero exit code.
 - In GitHub Actions, additionally emits `::error` annotations for failing crates.
 
@@ -178,6 +182,9 @@ What it does:
 - `prune` (default `true`)
 - `sync_concurrency` (default `8`, must be > 0)
 - `docs_source` (default `github`)
+- `sync_mode` (`lockfile` default, or `latest_docs`/`latest-docs`)
+- `latest_ttl_hours` (default `24`; latest-docs cache freshness)
+- `docsrs_single_page` (default `true`; docs.rs extraction strategy flag)
 
 ## 6.2 Per-crate settings (`[crates.<name>]`)
 
