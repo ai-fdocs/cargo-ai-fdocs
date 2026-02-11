@@ -121,7 +121,7 @@ cargo install cargo-ai-fdocs
 
 ```toml
 [settings]
-output_dir = "fdocs/rust"
+output_dir = "fdocs"
 max_file_size_kb = 200
 prune = true
 sync_concurrency = 8
@@ -186,7 +186,7 @@ fdocs/rust/
 `ai-fdocs.toml` supports:
 
 - `[settings]`
-  - `output_dir` (default: `fdocs/rust`)
+  - `output_dir` (default: `fdocs`)
   - `max_file_size_kb` (default: `200`)
   - `prune` (default: `true`)
   - `sync_concurrency` (default: `8`)
@@ -264,7 +264,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add fdocs/rust ai-fdocs.toml
+          git add fdocs ai-fdocs.toml
           git diff --cached --quiet || git commit -m "chore: refresh ai-fdocs"
 
       - name: Push changes

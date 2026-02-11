@@ -1,14 +1,18 @@
 use std::time::Duration;
 
-use reqwest::StatusCode;
+use reqwest::{Client, StatusCode};
 use serde::Deserialize;
+use tokio::time::sleep;
+use tracing::debug;
 
 use crate::error::{AiDocsError, Result};
 
 const APP_USER_AGENT: &str = concat!("cargo-ai-fdocs/", env!("CARGO_PKG_VERSION"));
+const MAX_RETRY_ATTEMPTS: usize = 3;
+const RETRY_BASE_BACKOFF_MS: u64 = 500;
 
 pub struct LatestDocsFetcher {
-    client: reqwest::Client,
+    client: Client,
 }
 
 #[derive(Debug, Clone)]
@@ -32,7 +36,7 @@ struct CratesIoCrate {
 
 impl LatestDocsFetcher {
     pub fn new() -> Self {
-        let client = reqwest::Client::builder()
+        let client = Client::builder()
             .user_agent(APP_USER_AGENT)
             .timeout(Duration::from_secs(30))
             .build()
@@ -42,7 +46,7 @@ impl LatestDocsFetcher {
 
     pub async fn resolve_latest_version(&self, crate_name: &str) -> Result<String> {
         let url = format!("https://crates.io/api/v1/crates/{crate_name}");
-        let response = self.client.get(&url).send().await?;
+        let response = self.send_with_retry(&url).await?;
         if !response.status().is_success() {
             return Err(AiDocsError::HttpStatus {
                 url,
@@ -69,7 +73,7 @@ impl LatestDocsFetcher {
         max_file_size_kb: usize,
     ) -> Result<DocsRsArtifact> {
         let docsrs_input_url = format!("https://docs.rs/crate/{crate_name}/{version}");
-        let response = self.client.get(&docsrs_input_url).send().await?;
+        let response = self.send_with_retry(&docsrs_input_url).await?;
         if !response.status().is_success() {
             return Err(AiDocsError::HttpStatus {
                 url: docsrs_input_url,
@@ -86,6 +90,56 @@ impl LatestDocsFetcher {
             docsrs_input_url: format!("https://docs.rs/crate/{crate_name}/{version}"),
             truncated,
         })
+    }
+
+    async fn send_with_retry(&self, url: &str) -> Result<reqwest::Response> {
+        let mut backoff_ms = RETRY_BASE_BACKOFF_MS;
+
+        for attempt in 1..=MAX_RETRY_ATTEMPTS {
+            match self.client.get(url).send().await {
+                Ok(response) => {
+                    let status = response.status();
+                    let retryable_status =
+                        status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error();
+
+                    if retryable_status && attempt < MAX_RETRY_ATTEMPTS {
+                        debug!(
+                            "latest-docs upstream {status} for {url}; retrying attempt {}/{} after {}ms",
+                            attempt + 1,
+                            MAX_RETRY_ATTEMPTS,
+                            backoff_ms
+                        );
+                        sleep(Duration::from_millis(backoff_ms)).await;
+                        backoff_ms *= 2;
+                        continue;
+                    }
+
+                    return Ok(response);
+                }
+                Err(source) => {
+                    let retryable_network =
+                        source.is_timeout() || source.is_connect() || source.is_request();
+
+                    if retryable_network && attempt < MAX_RETRY_ATTEMPTS {
+                        debug!(
+                            "latest-docs network error for {url}; retrying attempt {}/{} after {}ms: {source}",
+                            attempt + 1,
+                            MAX_RETRY_ATTEMPTS,
+                            backoff_ms
+                        );
+                        sleep(Duration::from_millis(backoff_ms)).await;
+                        backoff_ms *= 2;
+                        continue;
+                    }
+
+                    return Err(AiDocsError::Http(source));
+                }
+            }
+        }
+
+        Err(AiDocsError::Other(
+            "unexpected retry flow termination".to_string(),
+        ))
     }
 }
 
@@ -203,6 +257,14 @@ mod tests {
         assert!(is_docsrs_fallback_eligible(&AiDocsError::HttpStatus {
             url: "u".to_string(),
             status: 404,
+        }));
+        assert!(is_docsrs_fallback_eligible(&AiDocsError::HttpStatus {
+            url: "u".to_string(),
+            status: 429,
+        }));
+        assert!(is_docsrs_fallback_eligible(&AiDocsError::HttpStatus {
+            url: "u".to_string(),
+            status: 503,
         }));
         assert!(!is_docsrs_fallback_eligible(&AiDocsError::HttpStatus {
             url: "u".to_string(),
