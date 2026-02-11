@@ -120,6 +120,32 @@ function printSyncSummary(report: SyncReport): void {
   );
 }
 
+async function tryFetchFromNpmTarball(
+  npmRegistry: NpmRegistryClient,
+  name: string,
+  version: string,
+  subpath?: string,
+  files?: string[]
+): Promise<{ files: FetchedFile[] } | { error: { message: string; code?: string } }> {
+  try {
+    const tarballUrl = await npmRegistry.getTarballUrl(name, version);
+    if (!tarballUrl) {
+      return {
+        error: {
+          message: `${name}@${version}: no npm tarball URL`,
+          code: "NPM_TARBALL_NOT_FOUND",
+        },
+      };
+    }
+
+    const fetched = await fetchDocsFromNpmTarball(tarballUrl, subpath, files);
+    return { files: fetched };
+  } catch (e) {
+    const err = toErrorInfo(e);
+    return { error: { message: `${name}@${version}: ${err.message}`, code: err.code } };
+  }
+}
+
 export async function cmdSync(projectRoot: string, force: boolean, reportFormat: string = "text"): Promise<void> {
   if (reportFormat !== "text" && reportFormat !== "json") {
     throw new AiDocsError(`Unsupported --report-format value: ${reportFormat}`, "INVALID_FORMAT");
@@ -157,47 +183,81 @@ export async function cmdSync(projectRoot: string, force: boolean, reportFormat:
         };
       }
 
-      let fetchedFiles: FetchedFile[];
+      let fetchedFiles: FetchedFile[] | null = null;
       let resolved = { gitRef: "npm-tarball", isFallback: false };
+      let taskSource: SyncSource = selectedSource;
 
       if (selectedSource === "npm_tarball") {
-        try {
-          const tarballUrl = await npmRegistry.getTarballUrl(name, version);
-          if (!tarballUrl) {
-            return {
-              saved: null,
-              status: "error",
-              source: selectedSource,
-              message: `${name}@${version}: no npm tarball URL`,
-              errorCode: "NPM_TARBALL_NOT_FOUND",
-            };
-          }
-
-          fetchedFiles = await fetchDocsFromNpmTarball(tarballUrl, pkgConfig.subpath, pkgConfig.files);
-        } catch (e) {
-          const err = toErrorInfo(e);
-          return { saved: null, status: "error", source: selectedSource, message: `${name}@${version}: ${err.message}`, errorCode: err.code };
+        const tarball = await tryFetchFromNpmTarball(npmRegistry, name, version, pkgConfig.subpath, pkgConfig.files);
+        if ("error" in tarball) {
+          return {
+            saved: null,
+            status: "error",
+            source: selectedSource,
+            message: tarball.error.message,
+            errorCode: tarball.error.code,
+          };
         }
+        fetchedFiles = tarball.files;
       } else {
         try {
           resolved = await github.resolveRef(pkgConfig.repo, name, version);
         } catch (e) {
-          const err = toErrorInfo(e);
-          return { saved: null, status: "error", source: selectedSource, message: `${name}@${version}: ${err.message}`, errorCode: err.code };
+          const primaryErr = toErrorInfo(e);
+          const tarball = await tryFetchFromNpmTarball(npmRegistry, name, version, pkgConfig.subpath, pkgConfig.files);
+          if ("error" in tarball) {
+            return {
+              saved: null,
+              status: "error",
+              source: selectedSource,
+              message: `${name}@${version}: GitHub resolve failed (${primaryErr.message}); npm fallback failed (${tarball.error.message})`,
+              errorCode: primaryErr.code ?? tarball.error.code,
+            };
+          }
+
+          taskSource = "npm_tarball";
+          fetchedFiles = tarball.files;
+          resolved = { gitRef: "npm-tarball", isFallback: false };
         }
 
-        try {
-          fetchedFiles = pkgConfig.files
-            ? await github.fetchExplicitFiles(pkgConfig.repo, resolved.gitRef, pkgConfig.files)
-            : await github.fetchDefaultFiles(pkgConfig.repo, resolved.gitRef, pkgConfig.subpath);
-        } catch (e) {
-          const err = toErrorInfo(e);
-          return { saved: null, status: "error", source: selectedSource, message: `${name}@${version}: ${err.message}`, errorCode: err.code };
+        if (!fetchedFiles) {
+          try {
+            fetchedFiles = pkgConfig.files
+              ? await github.fetchExplicitFiles(pkgConfig.repo, resolved.gitRef, pkgConfig.files)
+              : await github.fetchDefaultFiles(pkgConfig.repo, resolved.gitRef, pkgConfig.subpath);
+          } catch (e) {
+            const primaryErr = toErrorInfo(e);
+            const tarball = await tryFetchFromNpmTarball(npmRegistry, name, version, pkgConfig.subpath, pkgConfig.files);
+            if ("error" in tarball) {
+              return {
+                saved: null,
+                status: "error",
+                source: selectedSource,
+                message: `${name}@${version}: GitHub fetch failed (${primaryErr.message}); npm fallback failed (${tarball.error.message})`,
+                errorCode: primaryErr.code ?? tarball.error.code,
+              };
+            }
+
+            taskSource = "npm_tarball";
+            fetchedFiles = tarball.files;
+            resolved = { gitRef: "npm-tarball", isFallback: false };
+          }
         }
       }
 
-      if (fetchedFiles.length === 0) {
-        return { saved: null, status: "skipped", source: selectedSource, message: `${name}@${version}: no files found` };
+      if (!fetchedFiles || fetchedFiles.length === 0) {
+        if (selectedSource === "github") {
+          const tarball = await tryFetchFromNpmTarball(npmRegistry, name, version, pkgConfig.subpath, pkgConfig.files);
+          if (!("error" in tarball) && tarball.files.length > 0) {
+            fetchedFiles = tarball.files;
+            taskSource = "npm_tarball";
+            resolved = { gitRef: "npm-tarball", isFallback: false };
+          }
+        }
+
+        if (!fetchedFiles || fetchedFiles.length === 0) {
+          return { saved: null, status: "skipped", source: taskSource, message: `${name}@${version}: no files found` };
+        }
       }
 
       const savedNames = savePackageFiles(
@@ -239,7 +299,7 @@ export async function cmdSync(projectRoot: string, force: boolean, reportFormat:
           aiNotes: pkgConfig.ai_notes ?? "",
         },
         status: "synced",
-        source: selectedSource,
+        source: taskSource,
       };
     })
   );
