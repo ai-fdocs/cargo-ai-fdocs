@@ -1,0 +1,6 @@
+schema_version = 2
+version = "4.17.21"
+git_ref = "4.17.21"
+fetched_at = "2026-01-01"
+is_fallback = false
+config_hash = "a33b68d72984e72d"

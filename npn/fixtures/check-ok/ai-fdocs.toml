@@ -1,0 +1,8 @@
+[settings]
+output_dir = "docs/ai/vendor-docs/node"
+prune = true
+max_file_size_kb = 512
+experimental_npm_tarball = false
+
+[packages.lodash]
+repo = "lodash/lodash"

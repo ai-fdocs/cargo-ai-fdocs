@@ -1,4 +1,5 @@
 import { AiDocsError } from "./error.js";
+import { classifyHttpError, fetchWithRetry } from "./net.js";
 import { createGunzip } from "node:zlib";
 import { Readable } from "node:stream";
 import tar, { type Headers } from "tar-stream";
@@ -86,7 +87,7 @@ export class GitHubClient {
 
     for (const target of targets) {
       const url = `https://api.github.com/repos/${repo}/git/ref/${target}`;
-      const resp = await fetch(url, { headers: this.headers() });
+      const resp = await fetchWithRetry(url, { headers: this.headers() });
       if (resp.ok) return true;
     }
 
@@ -95,9 +96,10 @@ export class GitHubClient {
 
   private async fetchTree(repo: string, ref: string): Promise<Array<{ path: string; type: string }>> {
     const url = `https://api.github.com/repos/${repo}/git/trees/${encodeURIComponent(ref)}?recursive=1`;
-    const resp = await fetch(url, { headers: this.headers() });
+    const resp = await fetchWithRetry(url, { headers: this.headers() });
     if (!resp.ok) {
-      throw new AiDocsError(`Failed to fetch file tree for ${repo}@${ref}`, "FETCH_TREE");
+      const kind = classifyHttpError(resp.status);
+      throw new AiDocsError(`Failed to fetch file tree for ${repo}@${ref}: ${resp.status}`, `GITHUB_${kind.toUpperCase()}`);
     }
     const data = (await resp.json()) as GitTreeResponse;
     return data.tree ?? [];
@@ -105,8 +107,12 @@ export class GitHubClient {
 
   private async fetchRaw(repo: string, ref: string, filePath: string): Promise<string | null> {
     const url = `https://raw.githubusercontent.com/${repo}/${encodeURIComponent(ref)}/${filePath}`;
-    const resp = await fetch(url, { headers: this.headers() });
-    if (!resp.ok) return null;
+    const resp = await fetchWithRetry(url, { headers: this.headers() });
+    if (resp.status === 404) return null;
+    if (!resp.ok) {
+      const kind = classifyHttpError(resp.status);
+      throw new AiDocsError(`Failed to fetch file ${filePath} from ${repo}@${ref}: ${resp.status}`, `GITHUB_${kind.toUpperCase()}`);
+    }
     return resp.text();
   }
 
@@ -124,9 +130,10 @@ export async function fetchDocsFromNpmTarball(
   subpath?: string,
   explicitFiles?: string[]
 ): Promise<FetchedFile[]> {
-  const resp = await fetch(tarballUrl);
+  const resp = await fetchWithRetry(tarballUrl);
   if (!resp.ok) {
-    throw new AiDocsError(`Failed to download npm tarball: ${resp.status}`, "NPM_TARBALL_DOWNLOAD");
+    const kind = classifyHttpError(resp.status);
+    throw new AiDocsError(`Failed to download npm tarball: ${resp.status}`, `NPM_TARBALL_${kind.toUpperCase()}`);
   }
 
   const raw = Buffer.from(await resp.arrayBuffer());

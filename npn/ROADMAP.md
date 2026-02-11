@@ -16,6 +16,23 @@
 - `sync`: параллельная загрузка docs, кеш с `config_hash`, генерация `_INDEX.md` и `_SUMMARY.md`.
 - `check`: CI-friendly exit code.
 - Экспериментальный источник docs из npm tarball (опциональный флаг).
+- `.aifd-meta.toml` для Node-версии включает `schema_version = 2` (legacy без поля остаётся совместимым).
+- `config_hash` нормализует `subpath` и порядок `files` для стабильной идемпотентности.
+- Добавлены unit-тесты для `config_hash` и совместимости metadata/cache.
+
+---
+
+## Прогресс по roadmap (с отметками)
+
+- [x] A2.1 Стандартизировать `.aifd-meta.toml` (`schema_version = 2`).
+- [x] A2.3 Стабилизировать `config_hash` (normalize `subpath`, порядок `files`).
+- [x] A3 (частично) Unit-тесты для cache/hash совместимости.
+- [x] B1.1 `check --format json` (machine-readable).
+- [x] A1 (частично) Добавлен общий retry/backoff + классификация HTTP ошибок в network-слое.
+- [x] B1.2 GitHub Actions workflow для `npn/**` + fixture `check` job.
+- [x] B2 Runbook и token-management рекомендации.
+- [x] C1.1 Добавлены source-метрики в `sync` (итоги по активному источнику).
+- [x] A1 (доп.) Добавлен short error summary по code-классам в `sync`.
 
 ---
 

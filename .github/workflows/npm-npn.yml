@@ -40,3 +40,33 @@ jobs:
 
       - name: Test
         run: npm test
+
+  check-fixture:
+    name: Check command fixture smoke
+    runs-on: ubuntu-latest
+    needs: build-test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: 'npn/package-lock.json'
+
+      - name: Install dependencies
+        working-directory: npn
+        run: npm install
+
+      - name: Build CLI
+        working-directory: npn
+        run: npm run build
+
+      - name: Run check --format json on fixture
+        working-directory: npn/fixtures/check-ok
+        run: |
+          node ../../dist/cli.js check --format json
+
