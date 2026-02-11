@@ -214,6 +214,8 @@ In CI (`cargo ai-fdocs check`), failures include per-crate reasons; in GitHub Ac
 
 `status/check --format json` now includes mode/source diagnostics per crate (`mode`, `source_kind`, `reason_code`) for machine-readable CI handling.
 
+`_SUMMARY.md` now includes explicit source provenance for latest-docs artifacts (docs.rs vs GitHub fallback) and truncation marker state.
+
 ### CI recipes (GitHub Actions)
 
 #### 1) `check` gate (PR/merge safety)

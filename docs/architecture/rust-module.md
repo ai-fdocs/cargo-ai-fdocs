@@ -50,6 +50,7 @@ Core idea: AI gets context for the real dependency versions used by the project,
 
 - `src/storage.rs`:
   - writes files, `.aifd-meta.toml`, `_SUMMARY.md`;
+  - records source provenance in `_SUMMARY.md` (docs.rs vs GitHub fallback in latest-docs);
   - cache checks via config fingerprint;
   - prune of outdated folders.
 
