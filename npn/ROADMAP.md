@@ -142,14 +142,15 @@ ADR с формальным выбором default source: [`docs/adr/0001-docs-
 
 **Задача:** стабилизировать API/поведение и подготовить перенос в отдельный репозиторий.
 
-- Freeze CLI contract и формат metadata.
-- SemVer policy + compatibility matrix (Node LTS, OS).
-- Changelog discipline и release checklist.
-- Отдельный репозиторий `npm-ai-fdocs` с перенесённой историей/доками.
+- [x] Freeze CLI contract и формат metadata (описано в [`README.md`](./README.md#stable-cli-contract-and-semver-policy)).
+- [x] SemVer policy + compatibility matrix (Node LTS, OS): [`README.md`](./README.md#stable-cli-contract-and-semver-policy), [`COMPATIBILITY.md`](./COMPATIBILITY.md).
+- [x] Changelog discipline и release checklist: [`RELEASING.md`](./RELEASING.md).
+- [ ] Отдельный репозиторий `npm-ai-fdocs` с перенесённой историей/доками.
 
 **Definition of Done (D):**
 - релиз `1.0.0` с зафиксированными контрактами;
-- команда может поддерживать проект без «скрытых» ручных шагов.
+- команда может поддерживать проект без «скрытых» ручных шагов;
+- release-процесс воспроизводим по документам [`COMPATIBILITY.md`](./COMPATIBILITY.md) и [`RELEASING.md`](./RELEASING.md).
 
 ---
 
