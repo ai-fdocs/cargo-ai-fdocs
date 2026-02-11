@@ -3,6 +3,7 @@ output_dir = "fdocs/rust"
 max_file_size_kb = 200
 prune = true
 docs_source = "github"
+sync_mode = "lockfile"
 
 [crates.serde]
 repo = "serde-rs/serde"

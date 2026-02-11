@@ -89,6 +89,26 @@ cargo ai-fdocs init
 > Note: the package name is `cargo-ai-fdocs`, while the current alpha command
 > flow in this branch uses `cargo ai-fdocs ...`.
 
+
+## Sync mode safety switch
+
+`lockfile` remains the safe default mode in the first release stage.
+
+- Source of truth for mode resolution: CLI `--mode` has priority over `settings.sync_mode`.
+- Supported values: `lockfile` (stable default), `latest-docs` / `latest_docs` (beta only).
+- If no CLI flag is provided, behavior is unchanged: sync follows lockfile flow.
+- `latest-docs` is marked **beta** and is intentionally guarded behind explicit opt-in.
+
+Examples:
+
+```bash
+# stable/default behavior
+cargo ai-fdocs sync
+
+# explicit beta opt-in (first stage)
+cargo ai-fdocs sync --mode latest-docs
+```
+
 ## Quick start
 
 1. Install
@@ -106,6 +126,7 @@ max_file_size_kb = 200
 prune = true
 sync_concurrency = 8
 docs_source = "github"
+sync_mode = "lockfile"
 
 [crates.axum]
 repo = "tokio-rs/axum"

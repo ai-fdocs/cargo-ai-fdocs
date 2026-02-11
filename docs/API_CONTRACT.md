@@ -2,12 +2,27 @@
 
 This document defines the **implementation contract** for the `latest_docs` sync mode.
 
+> Stage-1 rollout status: `latest_docs` is **beta** and must be explicitly enabled. Default mode remains `lockfile`.
+
 ## 1) Goals
 
 - Resolve latest stable crate version from crates.io.
 - Fetch documentation content from docs.rs for that exact version.
 - Fallback to GitHub docs files when docs.rs content is unavailable.
 - Keep behavior deterministic, observable, and CI-friendly.
+
+---
+
+
+## 1.1) Safe enablement and source of truth
+
+- Effective sync mode is resolved in this order:
+  1. CLI flag `sync --mode <mode>`
+  2. `settings.sync_mode` from config
+  3. implicit default `lockfile`
+- Stage-1 default must stay `lockfile` to avoid breaking existing sync behavior.
+- `latest_docs` / `latest-docs` is beta-only and requires explicit opt-in.
+- Acceptance guard: running `sync` without `--mode` must keep the existing lockfile-based sync flow unchanged.
 
 ---
 
@@ -93,7 +108,7 @@ For each configured crate:
 ## 4) Caching and freshness contract
 
 ## 4.1 Config knobs
-- `sync_mode = "latest_docs"`
+- `sync_mode = "latest_docs"` (beta, explicit opt-in)
 - `latest_ttl_hours = 24` (default)
 - `docsrs_single_page = true` (default)
 
@@ -175,6 +190,7 @@ For crates.io and docs.rs HTTP calls:
 
 ## Regression tests
 - existing lockfile mode behavior unchanged.
+- acceptance: run `sync` without `--mode` and assert lockfile flow remains the same.
 
 ---
 

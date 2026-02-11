@@ -20,6 +20,37 @@ pub enum DocsSource {
     GitHub,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SyncMode {
+    Lockfile,
+    LatestDocs,
+}
+
+impl SyncMode {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Lockfile => "lockfile",
+            Self::LatestDocs => "latest_docs",
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for SyncMode {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        match value.as_str() {
+            "lockfile" => Ok(Self::Lockfile),
+            "latest_docs" | "latest-docs" => Ok(Self::LatestDocs),
+            _ => Err(de::Error::custom(format!(
+                "settings.sync_mode must be \"lockfile\" or \"latest_docs\", got: {value}"
+            ))),
+        }
+    }
+}
+
 impl<'de> Deserialize<'de> for DocsSource {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
@@ -39,6 +70,10 @@ const fn default_docs_source() -> DocsSource {
     DocsSource::GitHub
 }
 
+const fn default_sync_mode() -> SyncMode {
+    SyncMode::Lockfile
+}
+
 #[derive(Debug, Deserialize)]
 pub struct Settings {
     #[serde(default = "default_output_dir")]
@@ -55,6 +90,9 @@ pub struct Settings {
 
     #[serde(default = "default_docs_source")]
     pub docs_source: DocsSource,
+
+    #[serde(default = "default_sync_mode")]
+    pub sync_mode: SyncMode,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -136,6 +174,7 @@ impl Default for Settings {
             prune: default_true(),
             sync_concurrency: default_sync_concurrency(),
             docs_source: default_docs_source(),
+            sync_mode: default_sync_mode(),
         }
     }
 }
@@ -183,7 +222,7 @@ mod tests {
     use std::path::Path;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use super::Config;
+    use super::{Config, SyncMode};
 
     #[test]
     fn example_config_parses_with_config_load() {
@@ -192,6 +231,56 @@ mod tests {
 
         assert!(config.crates.contains_key("serde"));
         assert!(config.crates.contains_key("sqlx"));
+    }
+
+    #[test]
+    fn settings_sync_mode_defaults_to_lockfile() {
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time should be valid")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("ai-fdocs-default-sync-mode-{suffix}.toml"));
+
+        fs::write(
+            &path,
+            r#"[settings]
+output_dir = "fdocs/rust"
+
+[crates.serde]
+repo = "serde-rs/serde"
+"#,
+        )
+        .expect("must write temporary config");
+
+        let config = Config::load(&path).expect("config should parse");
+        fs::remove_file(&path).expect("must cleanup temporary config");
+
+        assert_eq!(config.settings.sync_mode, SyncMode::Lockfile);
+    }
+
+    #[test]
+    fn settings_sync_mode_accepts_latest_docs_aliases() {
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time should be valid")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("ai-fdocs-latest-sync-mode-{suffix}.toml"));
+
+        fs::write(
+            &path,
+            r#"[settings]
+sync_mode = "latest-docs"
+
+[crates.serde]
+repo = "serde-rs/serde"
+"#,
+        )
+        .expect("must write temporary config");
+
+        let config = Config::load(&path).expect("config should parse");
+        fs::remove_file(&path).expect("must cleanup temporary config");
+
+        assert_eq!(config.settings.sync_mode, SyncMode::LatestDocs);
     }
 
     #[test]
