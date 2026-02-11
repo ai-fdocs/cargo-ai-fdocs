@@ -52,3 +52,8 @@ node dist/cli.js --help
 ## Roadmap
 
 Detailed roadmap: [`ROADMAP.md`](./ROADMAP.md).
+
+
+## Runbook
+
+Operational troubleshooting and CI guidance: [`RUNBOOK.md`](./RUNBOOK.md).

@@ -30,7 +30,8 @@
 - [x] B1.1 `check --format json` (machine-readable).
 - [x] A1 (частично) Добавлен общий retry/backoff + классификация HTTP ошибок в network-слое.
 - [x] B1.2 GitHub Actions workflow для `npn/**` + fixture `check` job.
-- [ ] B2 Runbook и token-management рекомендации.
+- [x] B2 Runbook и token-management рекомендации.
+- [x] C1.1 Добавлены source-метрики в `sync` (итоги по активному источнику).
 
 ---
 
