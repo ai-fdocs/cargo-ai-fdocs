@@ -16,6 +16,9 @@
 - `sync`: параллельная загрузка docs, кеш с `config_hash`, генерация `_INDEX.md` и `_SUMMARY.md`.
 - `check`: CI-friendly exit code.
 - Экспериментальный источник docs из npm tarball (опциональный флаг).
+- `.aifd-meta.toml` для Node-версии включает `schema_version = 2` (legacy без поля остаётся совместимым).
+- `config_hash` нормализует `subpath` и порядок `files` для стабильной идемпотентности.
+- Добавлены unit-тесты для `config_hash` и совместимости metadata/cache.
 
 ---
 
