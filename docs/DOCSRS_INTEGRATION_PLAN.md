@@ -6,6 +6,8 @@
 
 Запустить end-to-end поток `crates.io -> docs.rs -> local artifacts` для `cargo ai-fdocs sync --mode latest-docs` с безопасной деградацией в GitHub fallback.
 
+> В этой фазе считаем целевым размещение артефактов **в корне библиотеки** (repo root), в `./fdocs/...`, а не в подпапке `./docs/...`.
+
 ## Объём первой итерации (Sprint 1)
 
 1. **Каркас источников latest-docs**
@@ -38,7 +40,7 @@
 - TTL/revalidation (`latest_ttl_hours`, conditional checks);
 - mode-aware `status/check` с корректной семантикой latest-docs;
 - snapshot-тесты для `_INDEX.md`/`_SUMMARY.md`;
-- migration/runtime defaults для целевой структуры `fdocs/*`.
+- migration/runtime defaults для целевой структуры `./fdocs/*` в корне репозитория.
 
 ## Definition of Done для kickoff
 
