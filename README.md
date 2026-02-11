@@ -6,7 +6,7 @@
 exact dependency versions used in your Rust project.
 
 It syncs README/CHANGELOG/guides from GitHub repositories for versions pinned in
-`Cargo.lock`, then stores them locally under `docs/ai/vendor-docs/rust/` so
+`Cargo.lock`, then stores them locally under `docs/fdocs` so
 Cursor, Copilot, Windsurf, and other assistants can use up-to-date context.
 
 
