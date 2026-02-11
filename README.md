@@ -127,6 +127,13 @@ ai_notes = "Prefer compile-time checked queries with sqlx::query!"
 cargo ai-fdocs sync
 ```
 
+Cleanup generated docs when needed:
+
+```bash
+./scripts/fdocs-clean.sh        # removes ./fdocs
+./scripts/fdocs-clean.sh fdocs  # custom dir
+```
+
 By default files are stored in:
 
 ```text

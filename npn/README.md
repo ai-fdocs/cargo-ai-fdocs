@@ -69,10 +69,11 @@ npm run build
 node dist/cli.js --help
 ```
 
-From repository root you can also use a single command sync helper:
+From repository root you can also use helper scripts:
 
 ```bash
 ./scripts/fdocs-sync.sh
+./scripts/fdocs-clean.sh
 ```
 
 ## Commands
