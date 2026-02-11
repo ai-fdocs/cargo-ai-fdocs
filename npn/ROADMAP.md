@@ -35,6 +35,7 @@
 - [x] C1.2 Добавлен machine-readable отчёт `sync --report-format json`.
 - [x] C1.3 JSON-режим `sync` очищен до строгого JSON вывода (без лишних логов).
 - [x] A1 (доп.) Добавлен short error summary по code-классам в `sync`.
+- [x] A3 (доп.) Добавлены unit-тесты для `resolveRef` fallback и рендеринга `_SUMMARY.md`/`_INDEX.md`.
 
 ---
 
