@@ -38,6 +38,7 @@
 - [x] A3 (доп.) Добавлены unit-тесты для `resolveRef` fallback и рендеринга `_SUMMARY.md`/`_INDEX.md`.
 - [x] C1 (доп.) Реализован fallback с GitHub на npm tarball в `sync` при ошибках/пустой выборке GitHub.
 - [x] A3 (доп.2) Добавлены unit-тесты `cmdSync` для GitHub→npm tarball fallback сценариев.
+- [x] A3 (доп.3) Добавлены unit-тесты для ветки `GitHub fetch error -> npm fallback error` и проверки error-reporting.
 
 ---
 

@@ -85,4 +85,40 @@ describe("cmdSync github fallback", () => {
     expect(report.sourceStats.npm_tarball.synced).toBe(1);
     expect(report.totals.synced).toBe(1);
   });
+
+  it("falls back to npm tarball when GitHub file fetch throws", async () => {
+    const root = createFixtureRoot();
+    const logs: string[] = [];
+
+    vi.spyOn(console, "log").mockImplementation((msg?: unknown) => logs.push(String(msg ?? "")));
+    vi.spyOn(GitHubClient.prototype, "resolveRef").mockResolvedValue({ gitRef: "v4.17.21", isFallback: false });
+    vi.spyOn(GitHubClient.prototype, "fetchDefaultFiles").mockRejectedValue(new AiDocsError("rate limited", "GITHUB_RATE_LIMIT"));
+    vi.spyOn(NpmRegistryClient.prototype, "getTarballUrl").mockResolvedValue("https://registry.example/lodash.tgz");
+    vi.spyOn(fetcher, "fetchDocsFromNpmTarball").mockResolvedValue([{ path: "README.md", content: "# docs" }]);
+
+    await cmdSync(root, false, "json");
+
+    const report = JSON.parse(logs.at(-1) ?? "{}");
+    expect(report.sourceStats.npm_tarball.synced).toBe(1);
+    expect(report.totals.errors).toBe(0);
+  });
+
+  it("returns error when both GitHub fetch and npm fallback fail", async () => {
+    const root = createFixtureRoot();
+    const logs: string[] = [];
+
+    vi.spyOn(console, "log").mockImplementation((msg?: unknown) => logs.push(String(msg ?? "")));
+    vi.spyOn(GitHubClient.prototype, "resolveRef").mockResolvedValue({ gitRef: "v4.17.21", isFallback: false });
+    vi.spyOn(GitHubClient.prototype, "fetchDefaultFiles").mockRejectedValue(new AiDocsError("rate limited", "GITHUB_RATE_LIMIT"));
+    vi.spyOn(NpmRegistryClient.prototype, "getTarballUrl").mockResolvedValue(null);
+
+    await cmdSync(root, false, "json");
+
+    const report = JSON.parse(logs.at(-1) ?? "{}");
+    expect(report.totals.errors).toBe(1);
+    expect(report.errorCodes).toEqual({ GITHUB_RATE_LIMIT: 1 });
+    expect(report.issues[0]).toContain("GitHub fetch failed");
+    expect(report.issues[0]).toContain("npm fallback failed");
+  });
+
 });
