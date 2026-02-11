@@ -69,6 +69,12 @@ npm run build
 node dist/cli.js --help
 ```
 
+From repository root you can also use a single command sync helper:
+
+```bash
+./scripts/fdocs-sync.sh
+```
+
 ## Commands
 
 - `ai-fdocs init [--overwrite]`

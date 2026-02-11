@@ -120,6 +120,10 @@ ai_notes = "Prefer compile-time checked queries with sqlx::query!"
 3. Sync docs
 
 ```bash
+# one command (auto-init if ai-fdocs.toml is missing)
+./scripts/fdocs-sync.sh
+
+# direct command
 cargo ai-fdocs sync
 ```
 
