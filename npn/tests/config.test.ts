@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { loadConfig } from "../src/config.js";
 import { AiDocsError } from "../src/error.js";
 
-describe("loadConfig docs_source", () => {
+describe("loadConfig settings validation", () => {
   it("uses npm_tarball by default when source settings are omitted", () => {
     const root = mkdtempSync(join(tmpdir(), "aifd-config-"));
     writeFileSync(
@@ -91,6 +91,20 @@ describe("loadConfig docs_source", () => {
     expect(load).toThrowError(/settings\.sync_concurrency must be a positive integer/);
   });
 
+
+
+  it("fails fast on string sync_concurrency (no implicit coercion)", () => {
+    const root = mkdtempSync(join(tmpdir(), "aifd-config-"));
+    writeFileSync(
+      join(root, "ai-fdocs.toml"),
+      ['[settings]', 'sync_concurrency = "8"', '', '[packages.lodash]', 'repo = "lodash/lodash"'].join("\n"),
+      "utf-8"
+    );
+
+    const load = () => loadConfig(root);
+    expect(load).toThrowError(AiDocsError);
+    expect(load).toThrowError(/settings\.sync_concurrency must be a positive integer/);
+  });
   it("keeps backward compatibility with legacy experimental_npm_tarball=false", () => {
     const root = mkdtempSync(join(tmpdir(), "aifd-config-"));
     writeFileSync(

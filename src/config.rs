@@ -202,6 +202,33 @@ repo = "serde-rs/serde"
     }
 
     #[test]
+    fn config_with_invalid_docs_source_fails_parse() {
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time should be valid")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("ai-fdocs-invalid-docs-source-{suffix}.toml"));
+
+        fs::write(
+            &path,
+            r#"[settings]
+docs_source = "npm_tarball"
+
+[crates.serde]
+repo = "serde-rs/serde"
+"#,
+        )
+        .expect("must write temporary config");
+
+        let err = Config::load(&path).expect_err("invalid docs_source must fail");
+        fs::remove_file(&path).expect("must cleanup temporary config");
+
+        assert!(
+            err.to_string().contains("unknown variant") || err.to_string().contains("docs_source")
+        );
+    }
+
+    #[test]
     fn config_without_docs_source_uses_github_default() {
         let suffix = SystemTime::now()
             .duration_since(UNIX_EPOCH)
