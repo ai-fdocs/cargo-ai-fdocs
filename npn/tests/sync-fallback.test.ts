@@ -173,7 +173,7 @@ describe("cmdSync github fallback", () => {
     await cmdSync(root, { force: false, reportFormat: "json" });
 
     const report = JSON.parse(logs.at(-1) ?? "{}");
-    expect(report.totals.skipped).toBe(1);
+    expect(report.totals.errors).toBe(1);
     expect(report.issues[0]).toContain("no files found");
     expect(report.issues[0]).toContain("npm fallback failed (no npm tarball URL)");
   });
