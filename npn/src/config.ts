@@ -83,15 +83,19 @@ function validatePackageConfig(packageName: string, rawConfig: unknown): Package
   const files = pkg.files;
   const aiNotes = pkg.ai_notes;
 
-  if (repo !== undefined && typeof repo !== "string") {
-    throw new AiDocsError(`packages.${packageName}.repo must be a string, got: ${String(repo)}`, "INVALID_CONFIG");
+  if (repo !== undefined) {
+    if (typeof repo !== "string" || repo.trim().length === 0) {
+      throw new AiDocsError(`packages.${packageName}.repo must be a non-empty string`, "INVALID_CONFIG");
+    }
   }
 
-  if (subpath !== undefined && typeof subpath !== "string") {
-    throw new AiDocsError(
-      `packages.${packageName}.subpath must be a string, got: ${String(subpath)}`,
-      "INVALID_CONFIG"
-    );
+  if (subpath !== undefined) {
+    if (typeof subpath !== "string" || subpath.trim().length === 0) {
+      throw new AiDocsError(
+        `packages.${packageName}.subpath must be a non-empty string`,
+        "INVALID_CONFIG"
+      );
+    }
   }
 
   if (files !== undefined) {

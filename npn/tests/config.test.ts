@@ -61,7 +61,7 @@ describe("loadConfig settings validation", () => {
 
     const load = () => loadConfig(root);
     expect(load).toThrowError(AiDocsError);
-    expect(load).toThrowError(/settings\.max_file_size_kb must be a positive integer/);
+    expect(load).toThrowError(/settings\.max_file_size_kb must be greater than 0/);
   });
 
   it("fails fast on non-integer max_file_size_kb", () => {
@@ -74,7 +74,7 @@ describe("loadConfig settings validation", () => {
 
     const load = () => loadConfig(root);
     expect(load).toThrowError(AiDocsError);
-    expect(load).toThrowError(/settings\.max_file_size_kb must be a positive integer/);
+    expect(load).toThrowError(/settings\.max_file_size_kb must be an integer/);
   });
 
   it("fails fast on non-numeric max_file_size_kb", () => {
@@ -87,7 +87,7 @@ describe("loadConfig settings validation", () => {
 
     const load = () => loadConfig(root);
     expect(load).toThrowError(AiDocsError);
-    expect(load).toThrowError(/settings\.max_file_size_kb must be a positive integer/);
+    expect(load).toThrowError(/settings\.max_file_size_kb must be a number/);
   });
 
   it("uses default sync_concurrency=8", () => {
@@ -108,7 +108,7 @@ describe("loadConfig settings validation", () => {
 
     const load = () => loadConfig(root);
     expect(load).toThrowError(AiDocsError);
-    expect(load).toThrowError(/settings\.sync_concurrency must be a positive integer/);
+    expect(load).toThrowError(/settings\.sync_concurrency must be between 1 and 50/);
   });
 
   it("fails fast on non-integer sync_concurrency", () => {
@@ -121,7 +121,7 @@ describe("loadConfig settings validation", () => {
 
     const load = () => loadConfig(root);
     expect(load).toThrowError(AiDocsError);
-    expect(load).toThrowError(/settings\.sync_concurrency must be a positive integer/);
+    expect(load).toThrowError(/settings\.sync_concurrency must be an integer/);
   });
 
   it("fails fast on non-numeric sync_concurrency", () => {
@@ -134,7 +134,7 @@ describe("loadConfig settings validation", () => {
 
     const load = () => loadConfig(root);
     expect(load).toThrowError(AiDocsError);
-    expect(load).toThrowError(/settings\.sync_concurrency must be a positive integer/);
+    expect(load).toThrowError(/settings\.sync_concurrency must be a number/);
   });
 
   it("fails fast on string sync_concurrency (no implicit coercion)", () => {
@@ -147,7 +147,7 @@ describe("loadConfig settings validation", () => {
 
     const load = () => loadConfig(root);
     expect(load).toThrowError(AiDocsError);
-    expect(load).toThrowError(/settings\.sync_concurrency must be a positive integer/);
+    expect(load).toThrowError(/settings\.sync_concurrency must be a number/);
   });
   it("keeps backward compatibility with legacy experimental_npm_tarball=false", () => {
     const root = mkdtempSync(join(tmpdir(), "aifd-config-"));
