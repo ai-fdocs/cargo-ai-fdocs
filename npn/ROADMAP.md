@@ -50,6 +50,9 @@
 - [x] E5 Реализован механизм быстрого получения README напрямую из npm registry metadata (ускорение sync).
 - [x] E6 Обновлён `init` для автоматического включения пакетов без GitHub-репозиториев (через npm_tarball).
 - [x] E7 Формализован "NPM Documentation Fetching Mechanism" (Registry README + Tarball fallback).
+- [x] E8 Реализован режим `hybrid` (GitHub Meta + NPM Docs).
+- [x] E9 Добавлена консолидация `llms-full.md` (AI-optimized single-page docs).
+- [x] E10 Интегрирован `jsdoc-to-markdown` fallback для пакетов без README.
 
 ---
 

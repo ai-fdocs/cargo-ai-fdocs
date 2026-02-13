@@ -12,7 +12,7 @@ import { NpmRegistryClient } from "../registry.js";
 import { AiDocsError } from "../error.js";
 import { generateConsolidatedDoc } from "../consolidation.js";
 
-type SyncSource = "github" | "npm_tarball";
+type SyncSource = "github" | "npm_tarball" | "hybrid";
 
 interface SyncTaskResult {
   saved: SavedPackage | null;
@@ -46,6 +46,7 @@ export function summarizeSourceStats(results: SyncTaskResult[]): Record<SyncSour
   const stats: Record<SyncSource, SourceStat> = {
     github: { synced: 0, errors: 0, skipped: 0, cached: 0 },
     npm_tarball: { synced: 0, errors: 0, skipped: 0, cached: 0 },
+    hybrid: { synced: 0, errors: 0, skipped: 0, cached: 0 },
   };
 
   for (const result of results) {
