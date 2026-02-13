@@ -7,7 +7,7 @@ import * as path from "node:path";
 vi.mock("node:fs");
 vi.mock("yaml", () => ({
     default: {
-        stringify: (obj: any) => JSON.stringify(obj),
+        stringify: (obj: any) => Object.entries(obj).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join("\n"),
     },
 }));
 vi.mock("gpt-tokenizer/model/gpt-4", () => ({

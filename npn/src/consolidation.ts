@@ -41,16 +41,6 @@ export async function generateConsolidatedDoc(pkgDir: string, data: SummaryData,
 
     let content = "";
 
-    // 1. YAML Frontmatter
-    const frontmatter = {
-        name: data.packageName,
-        version: data.version,
-        repository: `https://github.com/${data.repo}`,
-        generated: new Date().toISOString(),
-        ai_notes: data.aiNotes || undefined,
-    };
-
-    content += `---\n${yaml.stringify(frontmatter)}---\n\n`;
     content += `# ${data.packageName} Full Documentation\n\n`;
 
     // 2. Metadata / Description
@@ -128,14 +118,22 @@ export async function generateConsolidatedDoc(pkgDir: string, data: SummaryData,
         }
     }
 
-    // TODO: Implement normalization/cleaning via remark if normalizeMarkdown is true
+    // 6. Normalization/cleaning via remark if normalizeMarkdown is true
     if (normalizeMarkdown) {
         content = await cleanMarkdown(content);
     }
 
-    // 6. Token Count Metadata Update
+    // 7. Final Assembly with Frontmatter including tokens
     const tokens = countTokens(content);
-    content = content.replace("generated:", `tokens: ${tokens}\n  generated:`);
+    const frontmatter = {
+        name: data.packageName,
+        version: data.version,
+        repository: data.repo ? `https://github.com/${data.repo}` : undefined,
+        tokens,
+        generated: new Date().toISOString(),
+        ai_notes: data.aiNotes || undefined,
+    };
 
-    writeFileSync(join(pkgDir, "llms-full.md"), content, "utf-8");
+    const finalContent = `---\n${yaml.stringify(frontmatter)}---\n\n${content}`;
+    writeFileSync(join(pkgDir, "llms-full.md"), finalContent, "utf-8");
 }

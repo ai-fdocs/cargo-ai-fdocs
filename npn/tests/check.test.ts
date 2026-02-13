@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { buildCheckReport, renderJsonReport } from "../src/commands/check.js";
 
 describe("check report", () => {
-  it("returns machine-readable report with missing docs issue", () => {
+  it("returns machine-readable report with missing docs issue", async () => {
     const root = mkdtempSync(join(tmpdir(), "aifd-check-"));
 
     writeFileSync(
@@ -35,7 +35,7 @@ describe("check report", () => {
 
     mkdirSync(join(root, "fdocs/node"), { recursive: true });
 
-    const report = buildCheckReport(root);
+    const report = await buildCheckReport(root);
 
     expect(report.ok).toBe(false);
     expect(report.issues).toEqual([{ name: "lodash", kind: "missing" }]);

@@ -94,7 +94,7 @@ describe("cmdSync github fallback", () => {
     vi.spyOn(NpmRegistryClient.prototype, "getTarballUrl").mockResolvedValue("https://registry.example/lodash.tgz");
     vi.spyOn(fetcher, "fetchDocsFromNpmTarball").mockResolvedValue([{ path: "README.md", content: "# docs" }]);
 
-    await cmdSync(root, false, "json");
+    await cmdSync(root, { force: false, reportFormat: "json" });
 
     const report = JSON.parse(logs.at(-1) ?? "{}");
     expect(report.source).toBe("github");
@@ -118,7 +118,7 @@ describe("cmdSync github fallback", () => {
     vi.spyOn(NpmRegistryClient.prototype, "getTarballUrl").mockResolvedValue("https://registry.example/lodash.tgz");
     vi.spyOn(fetcher, "fetchDocsFromNpmTarball").mockResolvedValue([{ path: "README.md", content: "# docs" }]);
 
-    await cmdSync(root, false, "json");
+    await cmdSync(root, { force: false, reportFormat: "json" });
 
     const report = JSON.parse(logs.at(-1) ?? "{}");
     expect(report.sourceStats.npm_tarball.synced).toBe(1);
@@ -135,7 +135,7 @@ describe("cmdSync github fallback", () => {
     vi.spyOn(NpmRegistryClient.prototype, "getTarballUrl").mockResolvedValue("https://registry.example/lodash.tgz");
     vi.spyOn(fetcher, "fetchDocsFromNpmTarball").mockResolvedValue([{ path: "README.md", content: "# docs" }]);
 
-    await cmdSync(root, false, "json");
+    await cmdSync(root, { force: false, reportFormat: "json" });
 
     const report = JSON.parse(logs.at(-1) ?? "{}");
     expect(report.sourceStats.npm_tarball.synced).toBe(1);
@@ -151,7 +151,7 @@ describe("cmdSync github fallback", () => {
     vi.spyOn(GitHubClient.prototype, "fetchDefaultFiles").mockRejectedValue(new AiDocsError("rate limited", "GITHUB_RATE_LIMIT"));
     vi.spyOn(NpmRegistryClient.prototype, "getTarballUrl").mockResolvedValue(null);
 
-    await cmdSync(root, false, "json");
+    await cmdSync(root, { force: false, reportFormat: "json" });
 
     const report = JSON.parse(logs.at(-1) ?? "{}");
     expect(report.totals.errors).toBe(1);
@@ -170,10 +170,10 @@ describe("cmdSync github fallback", () => {
     vi.spyOn(GitHubClient.prototype, "fetchDefaultFiles").mockResolvedValue([]);
     vi.spyOn(NpmRegistryClient.prototype, "getTarballUrl").mockResolvedValue(null);
 
-    await cmdSync(root, false, "json");
+    await cmdSync(root, { force: false, reportFormat: "json" });
 
     const report = JSON.parse(logs.at(-1) ?? "{}");
-    expect(report.totals.skipped).toBe(1);
+    expect(report.totals.errors).toBe(1);
     expect(report.issues[0]).toContain("no files found");
     expect(report.issues[0]).toContain("npm fallback failed (no npm tarball URL)");
   });
@@ -196,7 +196,7 @@ describe("cmdSync github fallback", () => {
     });
     vi.spyOn(NpmRegistryClient.prototype, "getTarballUrl").mockResolvedValue(null);
 
-    await cmdSync(root, false, "json");
+    await cmdSync(root, { force: false, reportFormat: "json" });
 
     const report = JSON.parse(logs.at(-1) ?? "{}");
     expect(report.totals.synced).toBe(1);
@@ -218,7 +218,7 @@ describe("cmdSync github fallback", () => {
     const tarballUrlSpy = vi.spyOn(NpmRegistryClient.prototype, "getTarballUrl").mockResolvedValue("https://registry.example/lodash.tgz");
     vi.spyOn(fetcher, "fetchDocsFromNpmTarball").mockResolvedValue([]);
 
-    await cmdSync(root, false, "json");
+    await cmdSync(root, { force: false, reportFormat: "json" });
 
     const report = JSON.parse(logs.at(-1) ?? "{}");
     expect(report.totals.skipped).toBe(1);

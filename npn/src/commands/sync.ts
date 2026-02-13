@@ -304,6 +304,10 @@ export async function cmdSync(projectRoot: string, options: { force?: boolean; m
           fetchedFiles = pkgConfig.files
             ? await github.fetchExplicitFiles(repo, resolved.gitRef, pkgConfig.files)
             : await github.fetchDefaultFiles(repo, resolved.gitRef, pkgConfig.subpath);
+
+          if (fetchedFiles.length === 0) {
+            throw new AiDocsError("no files found", "GITHUB_EMPTY");
+          }
         } catch (e) {
           const primaryErr = toErrorInfo(e);
           // Try npm fallback
@@ -313,7 +317,7 @@ export async function cmdSync(projectRoot: string, options: { force?: boolean; m
               saved: null,
               status: "error",
               source: selectedSource,
-              message: `${name}@${version}: GitHub failed (${primaryErr.message}); npm fallback failed (${npmFallback.error.message})`,
+              message: `${name}@${version}: GitHub fetch failed (${primaryErr.message}); npm fallback failed (${npmFallback.error.message})`,
               errorCode: primaryErr.code || npmFallback.error.code,
             };
           }
@@ -328,7 +332,7 @@ export async function cmdSync(projectRoot: string, options: { force?: boolean; m
           saved: null,
           status: "skipped",
           source: taskSource,
-          message: `${name}@${version}: no docs found`,
+          message: `${name}@${version}: no files found`,
         };
       }
 

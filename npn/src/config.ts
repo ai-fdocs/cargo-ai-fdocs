@@ -53,6 +53,28 @@ function requireNonEmptyString(value: unknown, field: string): string {
   return stringValue;
 }
 
+function requireNumber(value: unknown, field: string): number {
+  if (typeof value !== "number") {
+    throw new AiDocsError(`${field} must be a number, got: ${String(value)}`, "INVALID_CONFIG");
+  }
+  return value;
+}
+
+function requireInteger(value: unknown, field: string): number {
+  const num = requireNumber(value, field);
+  if (!Number.isInteger(num)) {
+    throw new AiDocsError(`${field} must be an integer`, "INVALID_CONFIG");
+  }
+  return num;
+}
+
+function requireBoolean(value: unknown, field: string): boolean {
+  if (typeof value !== "boolean") {
+    throw new AiDocsError(`${field} must be a boolean`, "INVALID_CONFIG");
+  }
+  return value;
+}
+
 function validatePackageConfig(packageName: string, rawConfig: unknown): PackageConfig {
   const pkg = asRecord(rawConfig, `packages.${packageName} must be a table`);
 
@@ -61,15 +83,19 @@ function validatePackageConfig(packageName: string, rawConfig: unknown): Package
   const files = pkg.files;
   const aiNotes = pkg.ai_notes;
 
-  if (repo !== undefined && typeof repo !== "string") {
-    throw new AiDocsError(`packages.${packageName}.repo must be a string, got: ${String(repo)}`, "INVALID_CONFIG");
+  if (repo !== undefined) {
+    if (typeof repo !== "string" || repo.trim().length === 0) {
+      throw new AiDocsError(`packages.${packageName}.repo must be a non-empty string`, "INVALID_CONFIG");
+    }
   }
 
-  if (subpath !== undefined && typeof subpath !== "string") {
-    throw new AiDocsError(
-      `packages.${packageName}.subpath must be a string, got: ${String(subpath)}`,
-      "INVALID_CONFIG"
-    );
+  if (subpath !== undefined) {
+    if (typeof subpath !== "string" || subpath.trim().length === 0) {
+      throw new AiDocsError(
+        `packages.${packageName}.subpath must be a non-empty string`,
+        "INVALID_CONFIG"
+      );
+    }
   }
 
   if (files !== undefined) {
@@ -116,10 +142,17 @@ export function loadConfig(projectRoot: string): Config {
 
   const docsSourceRaw = settingsRaw.docs_source;
   let docsSource: DocsSource = "npm_tarball";
-  if (docsSourceRaw === "github" || docsSourceRaw === "npm_tarball") {
-    docsSource = docsSourceRaw;
+  if (docsSourceRaw !== undefined) {
+    const s = requireString(docsSourceRaw, "settings.docs_source");
+    if (s === "github" || s === "npm_tarball") {
+      docsSource = s;
+    } else {
+      throw new AiDocsError('settings.docs_source must be "github" or "npm_tarball"', "INVALID_CONFIG");
+    }
   } else if (settingsRaw.experimental_npm_tarball === true) {
     docsSource = "npm_tarball";
+  } else if (settingsRaw.experimental_npm_tarball === false) {
+    docsSource = "github";
   }
 
   const syncModeRaw = settingsRaw.sync_mode;
@@ -132,13 +165,13 @@ export function loadConfig(projectRoot: string): Config {
 
   const config: Config = {
     settings: {
-      output_dir: String(settingsRaw.output_dir || "fdocs/node"),
-      max_file_size_kb: Number(settingsRaw.max_file_size_kb || 512),
-      prune: settingsRaw.prune !== false,
-      sync_concurrency: Number(settingsRaw.sync_concurrency || 8),
+      output_dir: settingsRaw.output_dir !== undefined ? requireNonEmptyString(settingsRaw.output_dir, "settings.output_dir") : "fdocs/node",
+      max_file_size_kb: settingsRaw.max_file_size_kb !== undefined ? requireInteger(settingsRaw.max_file_size_kb, "settings.max_file_size_kb") : 512,
+      prune: settingsRaw.prune !== undefined ? requireBoolean(settingsRaw.prune, "settings.prune") : true,
+      sync_concurrency: settingsRaw.sync_concurrency !== undefined ? requireInteger(settingsRaw.sync_concurrency, "settings.sync_concurrency") : 8,
       docs_source: docsSource,
       sync_mode: syncMode,
-      latest_ttl_hours: Number(settingsRaw.latest_ttl_hours || 24),
+      latest_ttl_hours: settingsRaw.latest_ttl_hours !== undefined ? requireInteger(settingsRaw.latest_ttl_hours, "settings.latest_ttl_hours") : 24,
     },
     packages: {},
   };

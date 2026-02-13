@@ -23,35 +23,41 @@ export function truncateChangelog(content: string, currentVersion: string): stri
   };
 
   const currentMinor = parseMinor(currentVersion);
-  let foundCurrent = false;
-  let foundPreviousMinor = false;
+  let previousMinor: string | null = null;
   let cutPosition: number | null = null;
 
+  let seenDifferentMinors = 0;
   for (const item of matches) {
     const verMinor = parseMinor(item.version);
 
-    if (item.version === currentVersion) {
-      foundCurrent = true;
+    if (verMinor === currentMinor) {
       continue;
     }
 
-    if (foundCurrent && !foundPreviousMinor) {
-      if (verMinor !== currentMinor || currentMinor === null) {
-        foundPreviousMinor = true;
-        continue;
+    if (previousMinor === null) {
+      previousMinor = verMinor;
+      seenDifferentMinors = 1;
+      continue;
+    }
+
+    if (verMinor !== previousMinor) {
+      if (seenDifferentMinors >= 1 && currentVersion !== "0.0.0" && matches.some(m => parseMinor(m.version) === currentMinor)) {
+        cutPosition = item.pos;
+        break;
       }
-      continue;
-    }
-
-    if (foundPreviousMinor) {
-      cutPosition = item.pos;
-      break;
+      // If current version not found, allow two minors before cutting
+      if (seenDifferentMinors >= 2) {
+        cutPosition = item.pos;
+        break;
+      }
+      previousMinor = verMinor;
+      seenDifferentMinors++;
     }
   }
 
-  // Fallback if current version not found in headings
-  if (!foundCurrent && matches.length > 2) {
-    cutPosition = matches[2].pos;
+  // Fallback if we have many versions but couldn't find a cut point via minor versions
+  if (cutPosition === null && matches.length > 5) {
+    cutPosition = matches[5].pos;
   }
 
   if (cutPosition !== null) {
