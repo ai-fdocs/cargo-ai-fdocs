@@ -1,0 +1,162 @@
+{
+    "name": "ai-fdocs",
+    "displayName": "AI Fresh Docs",
+    "description": "Manage documentation for AI coding assistants directly in VS Code",
+    "version": "0.1.0",
+    "publisher": "ai-fdocs",
+    "license": "MIT",
+    "engines": {
+        "vscode": "^1.85.0"
+    },
+    "categories": [
+        "Other"
+    ],
+    "keywords": [
+        "ai",
+        "documentation",
+        "cursor",
+        "copilot",
+        "windsurf",
+        "docs",
+        "rust",
+        "nodejs"
+    ],
+    "activationEvents": [
+        "workspaceContains:Cargo.toml",
+        "workspaceContains:package.json",
+        "workspaceContains:ai-fdocs.toml"
+    ],
+    "main": "./dist/extension.js",
+    "contributes": {
+        "commands": [
+            {
+                "command": "ai-fdocs.sync",
+                "title": "AI-Docs: Sync All",
+                "icon": "$(sync)"
+            },
+            {
+                "command": "ai-fdocs.forceSync",
+                "title": "AI-Docs: Force Sync",
+                "icon": "$(sync-ignored)"
+            },
+            {
+                "command": "ai-fdocs.syncPackage",
+                "title": "AI-Docs: Sync Package"
+            },
+            {
+                "command": "ai-fdocs.init",
+                "title": "AI-Docs: Initialize",
+                "icon": "$(file-add)"
+            },
+            {
+                "command": "ai-fdocs.prune",
+                "title": "AI-Docs: Prune",
+                "icon": "$(trash)"
+            },
+            {
+                "command": "ai-fdocs.check",
+                "title": "AI-Docs: Check Status"
+            },
+            {
+                "command": "ai-fdocs.openDocs",
+                "title": "AI-Docs: Open Documentation"
+            },
+            {
+                "command": "ai-fdocs.refresh",
+                "title": "AI-Docs: Refresh",
+                "icon": "$(refresh)"
+            }
+        ],
+        "viewsContainers": {
+            "activitybar": [
+                {
+                    "id": "ai-fdocs",
+                    "title": "AI Docs",
+                    "icon": "resources/icon.svg"
+                }
+            ]
+        },
+        "views": {
+            "ai-fdocs": [
+                {
+                    "id": "ai-fdocs-dependencies",
+                    "name": "Dependencies"
+                }
+            ]
+        },
+        "menus": {
+            "view/title": [
+                {
+                    "command": "ai-fdocs.sync",
+                    "when": "view == ai-fdocs-dependencies",
+                    "group": "navigation@1"
+                },
+                {
+                    "command": "ai-fdocs.refresh",
+                    "when": "view == ai-fdocs-dependencies",
+                    "group": "navigation@2"
+                },
+                {
+                    "command": "ai-fdocs.init",
+                    "when": "view == ai-fdocs-dependencies",
+                    "group": "navigation@3"
+                }
+            ],
+            "view/item/context": [
+                {
+                    "command": "ai-fdocs.syncPackage",
+                    "when": "view == ai-fdocs-dependencies && viewItem == package",
+                    "group": "inline"
+                },
+                {
+                    "command": "ai-fdocs.openDocs",
+                    "when": "view == ai-fdocs-dependencies && viewItem == package"
+                }
+            ]
+        },
+        "configuration": {
+            "title": "AI Fresh Docs",
+            "properties": {
+                "ai-fdocs.binaryPath": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Custom path to ai-fdocs binary. Leave empty to auto-detect."
+                },
+                "ai-fdocs.autoSync": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Automatically sync when lockfile changes are detected."
+                },
+                "ai-fdocs.syncOnSave": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Automatically sync when ai-fdocs.toml is saved."
+                },
+                "ai-fdocs.outputDir": {
+                    "type": "string",
+                    "default": "fdocs",
+                    "description": "Output directory for documentation files."
+                }
+            }
+        }
+    },
+    "scripts": {
+        "vscode:prepublish": "npm run compile",
+        "compile": "tsc -p ./",
+        "watch": "tsc -watch -p ./",
+        "pretest": "npm run compile",
+        "test": "node ./dist/test/runTest.js",
+        "lint": "eslint src --ext ts",
+        "package": "vsce package"
+    },
+    "devDependencies": {
+        "@types/node": "^20.12.0",
+        "@types/vscode": "^1.85.0",
+        "@typescript-eslint/eslint-plugin": "^6.21.0",
+        "@typescript-eslint/parser": "^6.21.0",
+        "@vscode/test-electron": "^2.3.9",
+        "eslint": "^8.57.0",
+        "typescript": "^5.4.0",
+        "@vscode/vsce": "^2.24.0"
+    }
+}
