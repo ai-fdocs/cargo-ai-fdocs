@@ -3,23 +3,28 @@ import { join } from "node:path";
 import { parse } from "smol-toml";
 import { AiDocsError } from "./error.js";
 
+export type DocsSource = "github" | "npm_tarball";
+export type SyncMode = "lockfile" | "latest_docs" | "hybrid";
+
+export interface Settings {
+  output_dir: string;
+  max_file_size_kb: number;
+  prune: boolean;
+  sync_concurrency: number;
+  docs_source: DocsSource;
+  sync_mode: SyncMode;
+  latest_ttl_hours: number;
+}
+
 export interface PackageConfig {
-  repo: string;
+  repo?: string;
   subpath?: string;
   files?: string[];
   ai_notes?: string;
 }
 
-export type DocsSource = "github" | "npm_tarball";
-
 export interface Config {
-  settings: {
-    output_dir: string;
-    prune: boolean;
-    max_file_size_kb: number;
-    sync_concurrency: number;
-    docs_source: DocsSource;
-  };
+  settings: Settings;
   packages: Record<string, PackageConfig>;
 }
 
@@ -51,10 +56,14 @@ function requireNonEmptyString(value: unknown, field: string): string {
 function validatePackageConfig(packageName: string, rawConfig: unknown): PackageConfig {
   const pkg = asRecord(rawConfig, `packages.${packageName} must be a table`);
 
-  const repo = requireNonEmptyString(pkg.repo, `packages.${packageName}.repo`);
+  const repo = pkg.repo;
   const subpath = pkg.subpath;
   const files = pkg.files;
   const aiNotes = pkg.ai_notes;
+
+  if (repo !== undefined && typeof repo !== "string") {
+    throw new AiDocsError(`packages.${packageName}.repo must be a string, got: ${String(repo)}`, "INVALID_CONFIG");
+  }
 
   if (subpath !== undefined && typeof subpath !== "string") {
     throw new AiDocsError(
@@ -86,7 +95,7 @@ function validatePackageConfig(packageName: string, rawConfig: unknown): Package
   }
 
   return {
-    repo,
+    repo: repo as string | undefined,
     subpath,
     files: files as string[] | undefined,
     ai_notes: aiNotes as string | undefined,
@@ -96,90 +105,78 @@ function validatePackageConfig(packageName: string, rawConfig: unknown): Package
 export function loadConfig(projectRoot: string): Config {
   const configPath = join(projectRoot, "ai-fdocs.toml");
   if (!existsSync(configPath)) {
-    throw new AiDocsError("ai-fdocs.toml not found", "CONFIG_NOT_FOUND");
+    throw new AiDocsError(`Config not found: ${configPath}`, "FILE_NOT_FOUND");
   }
 
-  const raw = readFileSync(configPath, "utf-8");
-  const data = parse(raw) as Record<string, unknown>;
+  const content = readFileSync(configPath, "utf-8");
+  const raw = parse(content) as Record<string, any>;
 
-  const settings = (data.settings as Record<string, unknown> | undefined) ?? {};
-  const rawPackages = (data.packages as Record<string, unknown> | undefined) ?? {};
-  const packages = asRecord(rawPackages, "packages must be a table");
-  const docsSourceRaw = settings.docs_source;
-  const hasExplicitDocsSource = Object.prototype.hasOwnProperty.call(settings, "docs_source");
-  if (hasExplicitDocsSource && docsSourceRaw !== "github" && docsSourceRaw !== "npm_tarball") {
-    throw new AiDocsError(
-      `settings.docs_source must be "github" or "npm_tarball", got: ${String(docsSourceRaw)}`,
-      "INVALID_CONFIG"
-    );
+  const settingsRaw = asRecord(raw.settings || {}, "settings must be a table");
+  const packagesRaw = asRecord(raw.packages || {}, "packages must be a table");
+
+  const docsSourceRaw = settingsRaw.docs_source;
+  let docsSource: DocsSource = "npm_tarball";
+  if (docsSourceRaw === "github" || docsSourceRaw === "npm_tarball") {
+    docsSource = docsSourceRaw;
+  } else if (settingsRaw.experimental_npm_tarball === true) {
+    docsSource = "npm_tarball";
   }
 
-  const docsSource = docsSourceRaw === "github" || docsSourceRaw === "npm_tarball" ? docsSourceRaw : undefined;
-
-  const hasLegacyExperimental = Object.prototype.hasOwnProperty.call(settings, "experimental_npm_tarball");
-  const legacyExperimentalRaw = settings.experimental_npm_tarball;
-  if (hasLegacyExperimental && typeof legacyExperimentalRaw !== "boolean") {
-    throw new AiDocsError(
-      `settings.experimental_npm_tarball must be a boolean, got: ${String(legacyExperimentalRaw)}`,
-      "INVALID_CONFIG"
-    );
-  }
-  const legacyExperimental = legacyExperimentalRaw ?? false;
-
-  const rawMaxFileSizeKb = settings.max_file_size_kb;
-  if (rawMaxFileSizeKb !== undefined && typeof rawMaxFileSizeKb !== "number") {
-    throw new AiDocsError(
-      `settings.max_file_size_kb must be a positive integer, got: ${String(rawMaxFileSizeKb)}`,
-      "INVALID_CONFIG"
-    );
+  const syncModeRaw = settingsRaw.sync_mode;
+  let syncMode: SyncMode = "lockfile";
+  if (syncModeRaw === "lockfile" || syncModeRaw === "latest_docs" || syncModeRaw === "hybrid") {
+    syncMode = syncModeRaw;
+  } else if (syncModeRaw === "latest-docs") {
+    syncMode = "latest_docs";
   }
 
-  const maxFileSizeKb = rawMaxFileSizeKb === undefined ? 512 : rawMaxFileSizeKb;
-  if (!Number.isInteger(maxFileSizeKb) || maxFileSizeKb <= 0) {
-    throw new AiDocsError(
-      `settings.max_file_size_kb must be a positive integer, got: ${String(rawMaxFileSizeKb)}`,
-      "INVALID_CONFIG"
-    );
-  }
-
-  const rawSyncConcurrency = settings.sync_concurrency;
-  if (rawSyncConcurrency !== undefined && typeof rawSyncConcurrency !== "number") {
-    throw new AiDocsError(
-      `settings.sync_concurrency must be a positive integer, got: ${String(rawSyncConcurrency)}`,
-      "INVALID_CONFIG"
-    );
-  }
-
-  const syncConcurrency = rawSyncConcurrency === undefined ? 8 : rawSyncConcurrency;
-  if (!Number.isInteger(syncConcurrency) || syncConcurrency <= 0) {
-    throw new AiDocsError(
-      `settings.sync_concurrency must be a positive integer, got: ${String(rawSyncConcurrency)}`,
-      "INVALID_CONFIG"
-    );
-  }
-
-  const outputDirRaw = settings.output_dir;
-  const outputDir = outputDirRaw === undefined ? "fdocs/node" : requireNonEmptyString(outputDirRaw, "settings.output_dir");
-
-  const pruneRaw = settings.prune;
-  if (pruneRaw !== undefined && typeof pruneRaw !== "boolean") {
-    throw new AiDocsError(`settings.prune must be a boolean, got: ${String(pruneRaw)}`, "INVALID_CONFIG");
-  }
-  const prune = pruneRaw ?? true;
-
-  const validatedPackages: Record<string, PackageConfig> = {};
-  for (const [packageName, packageConfig] of Object.entries(packages)) {
-    validatedPackages[packageName] = validatePackageConfig(packageName, packageConfig);
-  }
-
-  return {
+  const config: Config = {
     settings: {
-      output_dir: outputDir,
-      prune,
-      max_file_size_kb: maxFileSizeKb,
-      sync_concurrency: syncConcurrency,
-      docs_source: docsSource ?? (hasLegacyExperimental ? (legacyExperimental ? "npm_tarball" : "github") : "npm_tarball"),
+      output_dir: String(settingsRaw.output_dir || "fdocs/node"),
+      max_file_size_kb: Number(settingsRaw.max_file_size_kb || 512),
+      prune: settingsRaw.prune !== false,
+      sync_concurrency: Number(settingsRaw.sync_concurrency || 8),
+      docs_source: docsSource,
+      sync_mode: syncMode,
+      latest_ttl_hours: Number(settingsRaw.latest_ttl_hours || 24),
     },
-    packages: validatedPackages,
+    packages: {},
   };
+
+  for (const [name, pkgRaw] of Object.entries(packagesRaw)) {
+    config.packages[name] = validatePackageConfig(name, pkgRaw);
+  }
+
+  validateConfig(config);
+  return config;
+}
+
+function validateConfig(config: Config): void {
+  const { settings, packages } = config;
+
+  if (settings.sync_concurrency <= 0 || settings.sync_concurrency > 50) {
+    throw new AiDocsError("settings.sync_concurrency must be between 1 and 50", "INVALID_CONFIG");
+  }
+
+  if (settings.max_file_size_kb <= 0) {
+    throw new AiDocsError("settings.max_file_size_kb must be greater than 0", "INVALID_CONFIG");
+  }
+
+  if (settings.latest_ttl_hours <= 0) {
+    throw new AiDocsError("settings.latest_ttl_hours must be greater than 0", "INVALID_CONFIG");
+  }
+
+  const isLockfileMode = settings.sync_mode === "lockfile";
+  const isHybridMode = settings.sync_mode === "hybrid";
+  const isGithubSource = settings.docs_source === "github";
+
+  for (const [name, pkg] of Object.entries(packages)) {
+    if ((isGithubSource || isHybridMode) && !pkg.repo) {
+      throw new AiDocsError(`Package '${name}' must define 'repo' for github source or hybrid mode`, "INVALID_CONFIG");
+    }
+
+    if (isLockfileMode && isGithubSource && !pkg.repo) {
+      throw new AiDocsError(`Package '${name}' must define 'repo' for github source in lockfile mode`, "INVALID_CONFIG");
+    }
+  }
 }

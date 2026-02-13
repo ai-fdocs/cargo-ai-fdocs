@@ -10,6 +10,7 @@ import { generateIndex } from "../index.js";
 import { generateSummary, type SummaryFile } from "../summary.js";
 import { NpmRegistryClient } from "../registry.js";
 import { AiDocsError } from "../error.js";
+import { generateConsolidatedDoc } from "../consolidation.js";
 
 type SyncSource = "github" | "npm_tarball";
 
@@ -118,7 +119,7 @@ function printSyncSummary(report: SyncReport): void {
   );
 }
 
-async function tryFetchFromNpmTarball(
+async function tryFetchFromNpm(
   npmRegistry: NpmRegistryClient,
   name: string,
   version: string,
@@ -126,6 +127,15 @@ async function tryFetchFromNpmTarball(
   files?: string[]
 ): Promise<{ files: FetchedFile[] } | { error: { message: string; code?: string } }> {
   try {
+    // Fast path: try to get README from registry metadata if no explicit files or only README is requested
+    const isReadmeOnly = !files || (files.length === 1 && files[0].toLowerCase() === "readme.md");
+    if (isReadmeOnly && !subpath) {
+      const readme = await npmRegistry.getReadme(name, version);
+      if (readme) {
+        return { files: [{ path: "README.md", content: readme }] };
+      }
+    }
+
     const tarballUrl = await npmRegistry.getTarballUrl(name, version);
     if (!tarballUrl) {
       return {
@@ -144,133 +154,181 @@ async function tryFetchFromNpmTarball(
   }
 }
 
-export async function cmdSync(projectRoot: string, force: boolean, reportFormat: string = "text"): Promise<void> {
+export async function cmdSync(projectRoot: string, options: { force?: boolean; mode?: string; reportFormat?: string }): Promise<void> {
+  const force = options.force || false;
+  const reportFormat = options.reportFormat || "text";
+
   if (reportFormat !== "text" && reportFormat !== "json") {
     throw new AiDocsError(`Unsupported --report-format value: ${reportFormat}`, "INVALID_FORMAT");
   }
   const jsonMode = reportFormat === "json";
 
-  if (!jsonMode) console.log(chalk.blue(`Starting sync (v0.2)...${force ? " (force mode)" : ""}`));
-
   const config = loadConfig(projectRoot);
-  const lockVersions = resolveVersions(projectRoot);
+  const syncMode = options.mode || config.settings.sync_mode;
+
+  if (!jsonMode) {
+    console.log(chalk.blue(`Starting sync (mode: ${syncMode})...${force ? " (force mode)" : ""}`));
+  }
+
   const outputDir = join(projectRoot, config.settings.output_dir);
+  const npmRegistry = new NpmRegistryClient();
+  const github = new GitHubClient();
+
+  let targetVersions: Map<string, string>;
+  if (syncMode === "latest_docs") {
+    targetVersions = new Map();
+    if (!jsonMode) console.log(chalk.gray("Resolving latest versions from npm registry..."));
+    for (const name of Object.keys(config.packages)) {
+      try {
+        const ver = await npmRegistry.getLatestVersion(name);
+        targetVersions.set(name, ver);
+      } catch (e) {
+        if (!jsonMode) console.log(chalk.yellow(`  ⚠️ Failed to resolve latest version for ${name}: ${String(e)}`));
+      }
+    }
+  } else {
+    targetVersions = resolveVersions(projectRoot);
+  }
 
   if (config.settings.prune) {
     if (!jsonMode) console.log(chalk.gray("Pruning outdated docs..."));
-    prune(outputDir, config, lockVersions);
+    prune(outputDir, config, targetVersions);
   }
 
-  const github = new GitHubClient();
-  const npmRegistry = new NpmRegistryClient();
   const entries = Object.entries(config.packages);
   const limit = pLimit(config.settings.sync_concurrency);
   const selectedSource: SyncSource = config.settings.docs_source;
 
   const tasks = entries.map(([name, pkgConfig]) =>
     limit(async (): Promise<SyncTaskResult> => {
-      const version = lockVersions.get(name);
-      if (!version) return { saved: null, status: "skipped", source: selectedSource, message: `'${name}': not in lockfile` };
-
-      const configHash = computeConfigHash(pkgConfig);
-      if (!force && isCachedV2(outputDir, name, version, configHash)) {
+      const version = targetVersions.get(name);
+      if (!version) {
         return {
-          saved: readCachedInfo(outputDir, name, version, pkgConfig),
-          status: "cached",
+          saved: null,
+          status: "skipped",
           source: selectedSource,
+          message: `'${name}': version resolution failed`,
         };
       }
 
-      let fetchedFiles: FetchedFile[] | null = null;
-      let resolved = { gitRef: "npm-tarball", isFallback: false };
-      let taskSource: SyncSource = selectedSource;
-      let npmFallbackAttempted = false;
-      let lastFallbackError: { message: string; code?: string } | null = null;
+      const configHash = computeConfigHash(pkgConfig);
+      const isLatestMode = syncMode === "latest_docs";
 
-      if (selectedSource === "npm_tarball") {
-        npmFallbackAttempted = true;
-        const tarball = await tryFetchFromNpmTarball(npmRegistry, name, version, pkgConfig.subpath, pkgConfig.files);
-        if ("error" in tarball) {
+      if (!force && isCachedV2(outputDir, name, version, configHash)) {
+        const cached = readCachedInfo(outputDir, name, version, pkgConfig);
+        if (isLatestMode) {
+          const fetchedAt = (cached as any).fetchedAt; // Storage.ts adds this
+          if (fetchedAt && isLatestCacheFreshSync(fetchedAt, config.settings.latest_ttl_hours)) {
+            return { saved: cached, status: "cached", source: selectedSource };
+          }
+          if (!jsonMode) console.log(chalk.gray(`  🔄 ${name}@${version}: cache expired, refreshing...`));
+        } else {
+          return { saved: cached, status: "cached", source: selectedSource };
+        }
+      }
+
+      let fetchedFiles: FetchedFile[] | null = null;
+      let resolved = { gitRef: isLatestMode ? "npm-tarball" : "lockfile", isFallback: false };
+      let taskSource: SyncSource = selectedSource;
+      const isHybrid = syncMode === "hybrid";
+
+      if (isHybrid) {
+        // Hybrid mode: GitHub for Meta, NPM for Docs
+        const repo = pkgConfig.repo;
+        if (!repo) {
           return {
             saved: null,
             status: "error",
             source: selectedSource,
-            message: `${name}@${version}: ${tarball.error.message}`,
-            errorCode: tarball.error.code,
+            message: `${name}@${version}: missing repo for hybrid mode`,
+            errorCode: "CONFIG_ERROR",
           };
         }
-        fetchedFiles = tarball.files;
-      } else {
+
         try {
-          resolved = await github.resolveRef(pkgConfig.repo, name, version);
+          // 1. Resolve GitHub for Metadata (Changelog)
+          resolved = await github.resolveRef(repo, name, version);
+          const metaFiles = await github.fetchExplicitFiles(repo, resolved.gitRef, ["CHANGELOG.md", "CHANGES.md", "HISTORY.md"]);
+
+          // 2. Fetch Docs from NPM
+          const npmDocs = await tryFetchFromNpm(npmRegistry, name, version, pkgConfig.subpath, pkgConfig.files);
+
+          if ("error" in npmDocs) {
+            // If NPM fails, we fallback to GitHub entirely for docs too? 
+            // For hybrid MVP, lets try to get README at least from GitHub if NPM fails.
+            const githubDocs = await github.fetchDefaultFiles(repo, resolved.gitRef, pkgConfig.subpath);
+            fetchedFiles = [...metaFiles, ...githubDocs];
+            taskSource = "github";
+          } else {
+            fetchedFiles = [...metaFiles, ...npmDocs.files];
+            taskSource = "npm_tarball";
+          }
+        } catch (e) {
+          const err = toErrorInfo(e);
+          return {
+            saved: null,
+            status: "error",
+            source: selectedSource,
+            message: `${name}@${version}: Hybrid fetch failed: ${err.message}`,
+            errorCode: err.code,
+          };
+        }
+      } else if (selectedSource === "npm_tarball") {
+        const npmDocs = await tryFetchFromNpm(npmRegistry, name, version, pkgConfig.subpath, pkgConfig.files);
+        if ("error" in npmDocs) {
+          return {
+            saved: null,
+            status: "error",
+            source: selectedSource,
+            message: `${name}@${version}: ${npmDocs.error.message}`,
+            errorCode: npmDocs.error.code,
+          };
+        }
+        fetchedFiles = npmDocs.files;
+      } else {
+        // Source is GitHub
+        const repo = pkgConfig.repo;
+        if (!repo) {
+          return {
+            saved: null,
+            status: "error",
+            source: selectedSource,
+            message: `${name}@${version}: missing repo for github source`,
+            errorCode: "CONFIG_ERROR",
+          };
+        }
+
+        try {
+          resolved = await github.resolveRef(repo, name, version);
+          fetchedFiles = pkgConfig.files
+            ? await github.fetchExplicitFiles(repo, resolved.gitRef, pkgConfig.files)
+            : await github.fetchDefaultFiles(repo, resolved.gitRef, pkgConfig.subpath);
         } catch (e) {
           const primaryErr = toErrorInfo(e);
-          npmFallbackAttempted = true;
-          const tarball = await tryFetchFromNpmTarball(npmRegistry, name, version, pkgConfig.subpath, pkgConfig.files);
-          if ("error" in tarball) {
-            lastFallbackError = tarball.error;
+          // Try npm fallback
+          const npmFallback = await tryFetchFromNpm(npmRegistry, name, version, pkgConfig.subpath, pkgConfig.files);
+          if ("error" in npmFallback) {
             return {
               saved: null,
               status: "error",
               source: selectedSource,
-              message: `${name}@${version}: GitHub resolve failed (${primaryErr.message}); npm fallback failed (${tarball.error.message})`,
-              errorCode: primaryErr.code ?? tarball.error.code,
+              message: `${name}@${version}: GitHub failed (${primaryErr.message}); npm fallback failed (${npmFallback.error.message})`,
+              errorCode: primaryErr.code || npmFallback.error.code,
             };
           }
-
           taskSource = "npm_tarball";
-          fetchedFiles = tarball.files;
-          resolved = { gitRef: "npm-tarball", isFallback: false };
-        }
-
-        if (!fetchedFiles) {
-          try {
-            fetchedFiles = pkgConfig.files
-              ? await github.fetchExplicitFiles(pkgConfig.repo, resolved.gitRef, pkgConfig.files)
-              : await github.fetchDefaultFiles(pkgConfig.repo, resolved.gitRef, pkgConfig.subpath);
-          } catch (e) {
-            const primaryErr = toErrorInfo(e);
-            npmFallbackAttempted = true;
-            const tarball = await tryFetchFromNpmTarball(npmRegistry, name, version, pkgConfig.subpath, pkgConfig.files);
-            if ("error" in tarball) {
-              lastFallbackError = tarball.error;
-              return {
-                saved: null,
-                status: "error",
-                source: selectedSource,
-                message: `${name}@${version}: GitHub fetch failed (${primaryErr.message}); npm fallback failed (${tarball.error.message})`,
-                errorCode: primaryErr.code ?? tarball.error.code,
-              };
-            }
-
-            taskSource = "npm_tarball";
-            fetchedFiles = tarball.files;
-            resolved = { gitRef: "npm-tarball", isFallback: false };
-          }
+          fetchedFiles = npmFallback.files;
+          resolved = { gitRef: "npm-tarball", isFallback: true };
         }
       }
 
       if (!fetchedFiles || fetchedFiles.length === 0) {
-        let emptyFallbackError: { message: string; code?: string } | null = null;
-
-        if (selectedSource === "github" && !npmFallbackAttempted) {
-          npmFallbackAttempted = true;
-          const tarball = await tryFetchFromNpmTarball(npmRegistry, name, version, pkgConfig.subpath, pkgConfig.files);
-          if (!("error" in tarball) && tarball.files.length > 0) {
-            fetchedFiles = tarball.files;
-            taskSource = "npm_tarball";
-            resolved = { gitRef: "npm-tarball", isFallback: false };
-          } else if ("error" in tarball) {
-            emptyFallbackError = tarball.error;
-            lastFallbackError = tarball.error;
-          }
-        }
-
-        if (!fetchedFiles || fetchedFiles.length === 0) {
-          const fallbackError = emptyFallbackError ?? lastFallbackError;
-          const details = fallbackError ? `; npm fallback failed (${fallbackError.message})` : "";
-          return { saved: null, status: "skipped", source: taskSource, message: `${name}@${version}: no files found${details}` };
-        }
+        return {
+          saved: null,
+          status: "skipped",
+          source: taskSource,
+          message: `${name}@${version}: no docs found`,
+        };
       }
 
       const savedNames = savePackageFiles(
@@ -286,7 +344,7 @@ export async function cmdSync(projectRoot: string, force: boolean, reportFormat:
       );
 
       const pkgDir = join(outputDir, `${name}@${version}`);
-      const files: SummaryFile[] = fetchedFiles.map((f, i) => ({
+      const summaryFiles: SummaryFile[] = fetchedFiles.map((f, i) => ({
         flatName: savedNames[i],
         originalPath: f.path,
         sizeBytes: Buffer.byteLength(f.content, "utf-8"),
@@ -295,12 +353,27 @@ export async function cmdSync(projectRoot: string, force: boolean, reportFormat:
       generateSummary(pkgDir, {
         packageName: name,
         version,
-        repo: pkgConfig.repo,
+        repo: pkgConfig.repo || "",
         gitRef: resolved.gitRef,
         isFallback: resolved.isFallback,
         aiNotes: pkgConfig.ai_notes ?? "",
-        files,
+        files: summaryFiles,
       });
+
+      // Generate AI-optimized consolidated doc
+      generateConsolidatedDoc(
+        pkgDir,
+        {
+          packageName: name,
+          version,
+          repo: pkgConfig.repo || "",
+          gitRef: resolved.gitRef,
+          isFallback: resolved.isFallback,
+          aiNotes: pkgConfig.ai_notes ?? "",
+          files: summaryFiles,
+        },
+        { includeChangelog: true, normalizeMarkdown: true }
+      );
 
       return {
         saved: {
@@ -318,26 +391,30 @@ export async function cmdSync(projectRoot: string, force: boolean, reportFormat:
   );
 
   const results = await Promise.all(tasks);
-
   const savedPackages: SavedPackage[] = [];
-  for (const result of results) {
-    if (result.saved) savedPackages.push(result.saved);
-    if (!jsonMode && result.status === "skipped") {
-      console.log(chalk.yellow(`  ⏭ ${result.message}`));
-    }
-    if (!jsonMode && result.status === "error") {
-      console.log(chalk.red(`  ❌ ${result.message}`));
-    }
+  for (const r of results) {
+    if (r.saved) savedPackages.push(r.saved);
+    if (!jsonMode && r.status === "skipped") console.log(chalk.yellow(`  ⏭ ${r.message}`));
+    if (!jsonMode && r.status === "error") console.log(chalk.red(`  ❌ ${r.message}`));
   }
 
   savedPackages.sort((a, b) => a.name.localeCompare(b.name));
   generateIndex(outputDir, savedPackages);
 
   const report = buildSyncReport(results, selectedSource);
-
-  if (reportFormat === "json") {
+  if (jsonMode) {
     console.log(JSON.stringify(report, null, 2));
   } else {
     printSyncSummary(report);
+  }
+}
+
+function isLatestCacheFreshSync(fetchedAt: string, ttlHours: number): boolean {
+  try {
+    const date = new Date(fetchedAt);
+    if (isNaN(date.getTime())) return false;
+    return Date.now() - date.getTime() < ttlHours * 60 * 60 * 1000;
+  } catch {
+    return false;
   }
 }

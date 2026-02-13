@@ -23,13 +23,14 @@ program
 
 program
   .command("sync")
-  .description("Sync documentation based on lockfile")
-  .option("-f, --force", "Force re-download ignoring cache", false)
-  .option("--report-format <format>", "Sync summary format: text | json", "text")
+  .description("Sync documentation for dependencies")
+  .option("--force", "Force re-download of all documentation")
+  .option("--mode <mode>", "Sync mode: lockfile | latest_docs | hybrid", "lockfile")
+  .option("--report-format <format>", "Output format for the sync report: text | json", "text")
   .action(async (options) => {
     try {
       const { cmdSync } = await import("./commands/sync.js");
-      await cmdSync(process.cwd(), options.force, options.reportFormat);
+      await cmdSync(process.cwd(), options);
     } catch (e) {
       handleError(e);
     }
@@ -38,10 +39,12 @@ program
 program
   .command("status")
   .description("Show current documentation status")
-  .action(async () => {
+  .option("--format <format>", "Output format: text | json", "text")
+  .option("--mode <mode>", "Sync mode override: lockfile | latest_docs | hybrid")
+  .action(async (options) => {
     try {
       const { cmdStatus } = await import("./commands/status.js");
-      await cmdStatus(process.cwd());
+      await cmdStatus(process.cwd(), options.format, options.mode);
     } catch (e) {
       handleError(e);
     }
@@ -49,12 +52,13 @@ program
 
 program
   .command("check")
-  .description("Check if docs are up-to-date (CI mode)")
+  .description("Check if documentation is up to date (exit code 1 if not)")
   .option("--format <format>", "Output format: text | json", "text")
+  .option("--mode <mode>", "Sync mode override: lockfile | latest_docs | hybrid")
   .action(async (options) => {
     try {
       const { cmdCheck } = await import("./commands/check.js");
-      await cmdCheck(process.cwd(), options.format);
+      await cmdCheck(process.cwd(), options.format, options.mode);
     } catch (e) {
       handleError(e);
     }

@@ -12,15 +12,17 @@ interface NpmPackageResponse {
   name: string;
   description?: string;
   repository?:
-    | {
-        type?: string;
-        url?: string;
-        directory?: string;
-      }
-    | string;
+  | {
+    type?: string;
+    url?: string;
+    directory?: string;
+  }
+  | string;
 }
 
 interface NpmVersionResponse {
+  version: string;
+  readme?: string;
   dist?: {
     tarball?: string;
   };
@@ -65,6 +67,50 @@ export class NpmRegistryClient {
       return data.dist?.tarball ?? null;
     } catch {
       throw new AiDocsError(`Failed to parse npm registry response for ${name}@${version}`, "NPM_PARSE");
+    }
+  }
+
+  async getReadme(name: string, version: string): Promise<string | null> {
+    const encodedName = name.replace("/", "%2F");
+    const encodedVersion = encodeURIComponent(version);
+    const url = `${this.baseUrl}/${encodedName}/${encodedVersion}`;
+
+    const resp = await fetchWithRetry(url, { headers: { Accept: "application/json" } });
+    if (resp.status === 404) return null;
+    if (!resp.ok) {
+      const kind = classifyHttpError(resp.status);
+      throw new AiDocsError(`npm registry version metadata request failed for ${name}@${version}: ${resp.status}`, `NPM_${kind.toUpperCase()}`);
+    }
+
+    try {
+      const data = (await resp.json()) as NpmVersionResponse;
+      return data.readme ?? null;
+    } catch {
+      throw new AiDocsError(`Failed to parse npm registry response for ${name}@${version}`, "NPM_PARSE");
+    }
+  }
+
+  async getLatestVersion(name: string): Promise<string> {
+    const encodedName = name.replace("/", "%2F");
+    const url = `${this.baseUrl}/${encodedName}/latest`;
+
+    const resp = await fetchWithRetry(url, { headers: { Accept: "application/json" } });
+    if (resp.status === 404) {
+      throw new AiDocsError(`Package not found in npm registry: ${name}`, "NPM_NOT_FOUND");
+    }
+    if (!resp.ok) {
+      const kind = classifyHttpError(resp.status);
+      throw new AiDocsError(`npm registry latest version request failed for ${name}: ${resp.status}`, `NPM_${kind.toUpperCase()}`);
+    }
+
+    try {
+      const data = (await resp.json()) as { version: string };
+      if (!data.version) {
+        throw new AiDocsError(`npm registry response for ${name}@latest has no version`, "NPM_PARSE");
+      }
+      return data.version;
+    } catch {
+      throw new AiDocsError(`Failed to parse npm registry response for ${name}@latest`, "NPM_PARSE");
     }
   }
 }
@@ -122,7 +168,7 @@ export function extractGithubRepo(url: string): { repo: string; subpath?: string
 
   try {
     const normalized = cleaned.includes("://") ? cleaned : `https://github.com/${cleaned}`;
-    const parsed = new URL(normalized);
+    const parsed = new globalThis.URL(normalized);
     const parts = parsed.pathname.split("/").filter(Boolean);
     if (parts.length < 2) return null;
 

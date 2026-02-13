@@ -11,6 +11,7 @@
 ## Текущее состояние (baseline)
 
 Уже реализовано:
+
 - CLI-команды: `init`, `sync`, `status`, `check`.
 - `init`: чтение прямых зависимостей из `package.json` + metadata из npm registry.
 - `sync`: параллельная загрузка docs, кеш с `config_hash`, генерация `_INDEX.md` и `_SUMMARY.md`.
@@ -42,6 +43,13 @@
 - [x] A3 (доп.4) Добавлен тест для skip-ветки с пустым GitHub-результатом и диагностикой падения npm fallback.
 - [x] A3 (доп.5) Добавлен unit-тест partial failures (best-effort): один пакет падает, остальные успешно синкаются.
 - [x] A3 (доп.6) Добавлен тест на отсутствие повторного npm fallback-запроса после уже выполненного fallback с пустым результатом.
+- [x] E1 Реализован режим `latest_docs` для подтягивания актуальных версий из реестра (паритет v0.3).
+- [x] E2 Добавлена поддержка опционального поля `repo` для автоматического извлечения из npm tarball.
+- [x] E3 Реализована умная обрезка CHANGELOG (сохранение текущей и предыдущей минорной версии).
+- [x] E4 Добавлен machine-readable формат для `status --format json`.
+- [x] E5 Реализован механизм быстрого получения README напрямую из npm registry metadata (ускорение sync).
+- [x] E6 Обновлён `init` для автоматического включения пакетов без GitHub-репозиториев (через npm_tarball).
+- [x] E7 Формализован "NPM Documentation Fetching Mechanism" (Registry README + Tarball fallback).
 
 ---
 
@@ -50,6 +58,7 @@
 **Задача:** снять риски по надежности и предсказуемости, не меняя основной UX.
 
 ### A1. Надёжность network/fetch
+
 - Единая стратегия retry/backoff для:
   - npm registry API,
   - GitHub API,
@@ -58,11 +67,13 @@
 - Детальные сообщения в `sync/check` + человекочитаемый short summary.
 
 ### A2. Качество кеша и idempotency
+
 - Стандартизировать `.aifd-meta.toml` (добавить `schema_version` для Node-версии).
 - Явно документировать поведение legacy metadata без `config_hash`.
 - Проверить стабильность `config_hash` (порядок `files`, normalize `subpath`).
 
 ### A3. Тестирование
+
 - Unit + integration набор для:
   - tag->fallback branch,
   - partial failures (best-effort),
@@ -71,6 +82,7 @@
 - Минимальные e2e smoke сценарии на fixture-проектах.
 
 **Definition of Done (A):**
+
 - repeatable `sync` без ложных перекачек;
 - `check` предсказуемо выявляет drift;
 - покрыты критические сценарии fetch/cache.
@@ -82,17 +94,20 @@
 **Задача:** сделать npm-версию удобной для production CI.
 
 ### B1. CI contract
+
 - `check --format json` (machine-readable результат).
 - GitHub Actions workflow для `npn/**`:
   - install/build/test,
   - отдельный job для `check` на fixture-проекте.
 
 ### B2. Документация и операционная готовность
+
 - Runbook для команды: как дебажить 429/401/404.
 - Рекомендации по token management (`GH_TOKEN`/`GITHUB_TOKEN`).
 - Примеры `.gitattributes` и минимального CI pipeline.
 
 **Definition of Done (B):**
+
 - готовые CI-рецепты, которые можно копировать в сторонние репозитории;
 - машинный формат статуса для отчётности.
 
@@ -103,23 +118,30 @@
 **Главный открытый вопрос:** оставляем 2 источника (GitHub + npm tarball) или переходим на 1 источник.
 
 ### Вариант 1: GitHub primary + npm tarball fallback (текущий)
+
 Плюсы:
+
 - проще находить «живые» docs в репозитории,
 - хорошо работает для monorepo и нестандартных layout.
 
 Минусы:
+
 - 2 внешних источника = выше сложность и больше edge cases.
 
 ### Вариант 2: npm tarball primary (single-source)
+
 Плюсы:
+
 - проще архитектура (один домен и один тип артефакта),
 - контент ближе к реально опубликованному пакету.
 
 Минусы:
+
 - в tarball может не быть полной документации,
 - сложнее сопоставлять docs, которые лежат только в GitHub repo.
 
 ### План принятия решения
+
 1. Добавить метрики источников в `sync` (сколько пакетов успешно на каждом источнике).
 2. Прогнать выборку реальных проектов (минимум 20) и сравнить:
    - coverage (сколько полезных docs файлов),
@@ -130,11 +152,11 @@
 Актуальный benchmark-отчёт: [`npn/docs/benchmarks/source-strategy-2026-02.md`](docs/benchmarks/source-strategy-2026-02.md).
 
 **Definition of Done (C):**
+
 - принято формальное решение по default source;
 - это решение отражено в README + config docs + migration notes.
 
 ---
-
 
 ADR с формальным выбором default source: [`docs/adr/0001-docs-source-strategy.md`](./docs/adr/0001-docs-source-strategy.md).
 
@@ -148,6 +170,7 @@ ADR с формальным выбором default source: [`docs/adr/0001-docs-
 - [ ] Отдельный репозиторий `npm-ai-fdocs` с перенесённой историей/доками.
 
 **Definition of Done (D):**
+
 - релиз `1.0.0` с зафиксированными контрактами;
 - команда может поддерживать проект без «скрытых» ручных шагов;
 - release-процесс воспроизводим по документам [`COMPATIBILITY.md`](./COMPATIBILITY.md) и [`RELEASING.md`](./RELEASING.md).
@@ -157,6 +180,5 @@ ADR с формальным выбором default source: [`docs/adr/0001-docs-
 ## Приоритеты на ближайшие 2 спринта
 
 1. A1/A2/A3 (стабилизация + тесты).
-2. B1 (`check --format json`) и CI recipes.
-3. Сбор метрик для C (source strategy decision).
-
+2. D (перенос в отдельный репозиторий).
+3. Валидация бенчмарков в стабильной сетевой среде.

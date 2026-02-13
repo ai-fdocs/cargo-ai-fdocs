@@ -59,6 +59,7 @@ export class GitHubClient {
       "history.md",
       "license",
       "license.md",
+      "index.html",
       "docs/readme.md",
     ]);
 
@@ -149,6 +150,7 @@ export async function fetchDocsFromNpmTarball(
     "history.md",
     "license",
     "license.md",
+    "index.html",
     "docs/readme.md",
   ]);
 
